@@ -14,6 +14,7 @@
     "@sdkwork/account-pc-core": "workspace:*",
     "@sdkwork/account-pc-wallet": "workspace:*",
     "@sdkwork/ui-pc-react": "workspace:*",
+    "@sdkwork/sdk-common": "workspace:*",
     "react": "catalog:"
   },
   "peerDependencies": {

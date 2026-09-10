@@ -79,3 +79,13 @@ Thumbs.db
 
 # Build artifacts
 /bin/
+
+# SDK generated server-openapi output (local regeneration product, not committed)
+sdks/**/generated/
+*.js.map
+*.d.ts.map
+# SDK facade transpiled output (build artifacts, not committed)
+sdks/**/*-typescript/src/*.js
+sdks/**/*-typescript/src/*.d.ts
+sdks/**/composed/*.js
+sdks/**/composed/*.d.ts

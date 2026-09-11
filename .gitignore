@@ -78,7 +78,6 @@ Thumbs.db
 **/public/runtime-env.json
 
 # Build artifacts
-/bin/
 
 # SDK generated server-openapi output (local regeneration product, not committed)
 sdks/**/generated/

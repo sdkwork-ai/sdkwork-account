@@ -36,7 +36,7 @@
     "db:drift:check": "cargo run --manifest-path ../sdkwork-database/Cargo.toml -p sdkwork-database-cli -- --app-root . drift-check",
     "db:bootstrap": "cargo run --manifest-path ../sdkwork-database/Cargo.toml -p sdkwork-database-cli -- --app-root . bootstrap",
     "check:app-composition": "node ../sdkwork-specs/tools/verify-repo.mjs --root .",
-    "sync:openapi": "node scripts/sync-account-openapi-to-sdks.mjs",
+    "api:materialize": "node scripts/sync-account-openapi-to-sdks.mjs",
     "sdk:generate": "node sdks/sdkwork-account-app-sdk/bin/generate-sdk.mjs && node sdks/sdkwork-account-backend-sdk/bin/generate-sdk.mjs",
     "sdk:generate:app": "node sdks/sdkwork-account-app-sdk/bin/generate-sdk.mjs",
     "sdk:generate:backend": "node sdks/sdkwork-account-backend-sdk/bin/generate-sdk.mjs",

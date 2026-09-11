@@ -1,9 +1,13 @@
 [package]
+rust-version.workspace = true
 name = "sdkwork-contract-service"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "SDKWork canonical commerce domain, context, and amount contracts for local/private Rust deployments."
 
+
+[lints]
+workspace = true
 [lib]
 path = "src/lib.rs"

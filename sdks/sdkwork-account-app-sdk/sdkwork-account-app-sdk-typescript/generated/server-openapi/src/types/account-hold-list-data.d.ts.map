@@ -1,0 +1,1 @@
+{"version":3,"file":"account-hold-list-data.d.ts","sourceRoot":"","sources":["account-hold-list-data.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,qBAAqB,CAAC;AAC3D,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,aAAa,CAAC;AAE5C,MAAM,WAAW,mBAAmB;IAClC,KAAK,EAAE,eAAe,EAAE,CAAC;IACzB,QAAQ,EAAE,QAAQ,CAAC;CACpB"}

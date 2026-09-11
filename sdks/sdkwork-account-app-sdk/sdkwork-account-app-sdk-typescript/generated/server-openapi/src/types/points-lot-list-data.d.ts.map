@@ -1,0 +1,1 @@
+{"version":3,"file":"points-lot-list-data.d.ts","sourceRoot":"","sources":["points-lot-list-data.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,aAAa,CAAC;AAC5C,OAAO,KAAK,EAAE,aAAa,EAAE,MAAM,mBAAmB,CAAC;AAEvD,MAAM,WAAW,iBAAiB;IAChC,KAAK,EAAE,aAAa,EAAE,CAAC;IACvB,QAAQ,EAAE,QAAQ,CAAC;CACpB"}

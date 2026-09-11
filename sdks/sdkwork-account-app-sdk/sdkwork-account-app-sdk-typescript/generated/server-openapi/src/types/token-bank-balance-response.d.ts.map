@@ -1,0 +1,1 @@
+{"version":3,"file":"token-bank-balance-response.d.ts","sourceRoot":"","sources":["token-bank-balance-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,oBAAoB,EAAE,MAAM,2BAA2B,CAAC;AAEtE,MAAM,WAAW,wBAAwB;IACvC,IAAI,EAAE,CAAC,CAAC;IACR,IAAI,EAAE,oBAAoB,CAAC;IAC3B,OAAO,EAAE,MAAM,CAAC;CACjB"}

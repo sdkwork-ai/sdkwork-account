@@ -1,0 +1,1 @@
+{"version":3,"file":"account-hold-list-response.d.ts","sourceRoot":"","sources":["account-hold-list-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,0BAA0B,CAAC;AAEpE,MAAM,WAAW,uBAAuB;IACtC,IAAI,EAAE,CAAC,CAAC;IACR,IAAI,EAAE,mBAAmB,CAAC;IAC1B,OAAO,EAAE,MAAM,CAAC;CACjB"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"wallet-ledger-list-response.d.ts","sourceRoot":"","sources":["wallet-ledger-list-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,oBAAoB,EAAE,MAAM,2BAA2B,CAAC;AAEtE,MAAM,WAAW,wBAAwB;IACvC,IAAI,EAAE,CAAC,CAAC;IACR,IAAI,EAAE,oBAAoB,CAAC;IAC3B,OAAO,EAAE,MAAM,CAAC;CACjB"}

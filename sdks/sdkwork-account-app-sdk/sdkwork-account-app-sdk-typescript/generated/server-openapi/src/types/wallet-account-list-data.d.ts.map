@@ -1,0 +1,1 @@
+{"version":3,"file":"wallet-account-list-data.d.ts","sourceRoot":"","sources":["wallet-account-list-data.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,aAAa,CAAC;AAC5C,OAAO,KAAK,EAAE,iBAAiB,EAAE,MAAM,uBAAuB,CAAC;AAE/D,MAAM,WAAW,qBAAqB;IACpC,KAAK,EAAE,iBAAiB,EAAE,CAAC;IAC3B,QAAQ,EAAE,QAAQ,CAAC;CACpB"}

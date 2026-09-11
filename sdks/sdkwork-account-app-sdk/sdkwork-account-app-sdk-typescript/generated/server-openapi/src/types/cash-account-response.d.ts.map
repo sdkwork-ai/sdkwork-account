@@ -1,0 +1,1 @@
+{"version":3,"file":"cash-account-response.d.ts","sourceRoot":"","sources":["cash-account-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,qBAAqB,CAAC;AAE3D,MAAM,WAAW,mBAAmB;IAClC,IAAI,EAAE,CAAC,CAAC;IACR,IAAI,EAAE,eAAe,CAAC;IACtB,OAAO,EAAE,MAAM,CAAC;CACjB"}

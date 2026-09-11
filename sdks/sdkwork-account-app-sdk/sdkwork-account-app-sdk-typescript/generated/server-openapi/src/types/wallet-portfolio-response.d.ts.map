@@ -1,0 +1,1 @@
+{"version":3,"file":"wallet-portfolio-response.d.ts","sourceRoot":"","sources":["wallet-portfolio-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,yBAAyB,CAAC;AAEnE,MAAM,WAAW,uBAAuB;IACtC,IAAI,EAAE,CAAC,CAAC;IACR,IAAI,EAAE,mBAAmB,CAAC;IAC1B,OAAO,EAAE,MAAM,CAAC;CACjB"}

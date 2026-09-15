@@ -14,9 +14,9 @@
 
 This is a cross-repository plan. Execute from each writable repository root:
 
-- `E:\sdkwork-space\sdkwork-account`: account boundary, ledger command contracts, docs.
-- `E:\sdkwork-space\sdkwork-order`: PRD, architecture, order subjects, package/plan/coupon/refund/withdrawal APIs, sagas, database, SDKs.
-- `E:\sdkwork-space\sdkwork-payment`: provider refund executor surfaces today and future provider payout executor boundary only; no account dependency.
+- `<workspace-root>/sdkwork-account`: account boundary, ledger command contracts, docs.
+- `<workspace-root>/sdkwork-order`: PRD, architecture, order subjects, package/plan/coupon/refund/withdrawal APIs, sagas, database, SDKs.
+- `<workspace-root>/sdkwork-payment`: provider refund executor surfaces today and future provider payout executor boundary only; no account dependency.
 
 Current sandbox allows writes only in `sdkwork-account`. Tasks touching `sdkwork-order` or `sdkwork-payment` require a writable run rooted at those repositories.
 
@@ -108,11 +108,11 @@ Expected: PASS with all static tests green.
 Run:
 
 ```powershell
-node E:\sdkwork-space\sdkwork-specs\tools\check-repository-docs-standard.mjs --root E:\sdkwork-space\sdkwork-account
-node E:\sdkwork-space\sdkwork-specs\tools\check-api-operation-patterns.mjs --workspace E:\sdkwork-space\sdkwork-account
-node E:\sdkwork-space\sdkwork-specs\tools\check-api-response-envelope.mjs --workspace E:\sdkwork-space\sdkwork-account
-node E:\sdkwork-space\sdkwork-specs\tools\check-pagination.mjs --workspace E:\sdkwork-space\sdkwork-account
-node E:\sdkwork-space\sdkwork-specs\tools\check-app-sdk-consumer-imports.mjs --workspace E:\sdkwork-space\sdkwork-account
+node <workspace-root>/sdkwork-specs\tools\check-repository-docs-standard.mjs --root <workspace-root>/sdkwork-account
+node <workspace-root>/sdkwork-specs\tools\check-api-operation-patterns.mjs --workspace <workspace-root>/sdkwork-account
+node <workspace-root>/sdkwork-specs\tools\check-api-response-envelope.mjs --workspace <workspace-root>/sdkwork-account
+node <workspace-root>/sdkwork-specs\tools\check-pagination.mjs --workspace <workspace-root>/sdkwork-account
+node <workspace-root>/sdkwork-specs\tools\check-app-sdk-consumer-imports.mjs --workspace <workspace-root>/sdkwork-account
 pnpm.cmd verify
 pnpm.cmd test
 git diff --check
@@ -122,7 +122,7 @@ Expected: all pass.
 
 ## Task 2: Order Account-Value Spec And Machine Contract
 
-**Writable root:** `E:\sdkwork-space\sdkwork-order`
+**Writable root:** `<workspace-root>/sdkwork-order`
 
 **Files:**
 - Create: `specs/ACCOUNT_VALUE_ORDER_SPEC.md`
@@ -207,7 +207,7 @@ Expected: PASS.
 
 ## Task 3: Order Database And Domain Model
 
-**Writable root:** `E:\sdkwork-space\sdkwork-order`
+**Writable root:** `<workspace-root>/sdkwork-order`
 
 **Files:**
 - Modify: `database/ddl/baseline/postgres/0001_order_baseline.sql`
@@ -274,7 +274,7 @@ Expected: PASS.
 
 ## Task 4: Order App And Backend API Contracts
 
-**Writable root:** `E:\sdkwork-space\sdkwork-order`
+**Writable root:** `<workspace-root>/sdkwork-order`
 
 **Files:**
 - Modify: `apis/app-api/order/order-app-api.openapi.json`
@@ -320,16 +320,16 @@ Add management resources:
 Run:
 
 ```powershell
-node E:\sdkwork-space\sdkwork-specs\tools\check-api-operation-patterns.mjs --workspace E:\sdkwork-space\sdkwork-order
-node E:\sdkwork-space\sdkwork-specs\tools\check-api-response-envelope.mjs --workspace E:\sdkwork-space\sdkwork-order
-node E:\sdkwork-space\sdkwork-specs\tools\check-pagination.mjs --workspace E:\sdkwork-space\sdkwork-order
+node <workspace-root>/sdkwork-specs\tools\check-api-operation-patterns.mjs --workspace <workspace-root>/sdkwork-order
+node <workspace-root>/sdkwork-specs\tools\check-api-response-envelope.mjs --workspace <workspace-root>/sdkwork-order
+node <workspace-root>/sdkwork-specs\tools\check-pagination.mjs --workspace <workspace-root>/sdkwork-order
 ```
 
 Expected: PASS.
 
 ## Task 5: Order Settlement Sagas
 
-**Writable root:** `E:\sdkwork-space\sdkwork-order`
+**Writable root:** `<workspace-root>/sdkwork-order`
 
 **Files:**
 - Modify: `crates/sdkwork-order-service/src/**`
@@ -385,7 +385,7 @@ Expected: PASS.
 
 ## Task 6: Payment Refund Executor And Future Payout Boundary
 
-**Writable root:** `E:\sdkwork-space\sdkwork-payment`
+**Writable root:** `<workspace-root>/sdkwork-payment`
 
 **Files:**
 - Modify: `specs/PAYMENT_EXECUTOR_SPEC.md`
@@ -423,9 +423,9 @@ Run:
 rg 'sdkwork_account|sdkwork-account|account backend' crates Cargo.toml
 cargo test --workspace
 pnpm.cmd verify
-node E:\sdkwork-space\sdkwork-specs\tools\check-api-operation-patterns.mjs --workspace E:\sdkwork-space\sdkwork-payment
-node E:\sdkwork-space\sdkwork-specs\tools\check-api-response-envelope.mjs --workspace E:\sdkwork-space\sdkwork-payment
-node E:\sdkwork-space\sdkwork-specs\tools\check-pagination.mjs --workspace E:\sdkwork-space\sdkwork-payment
+node <workspace-root>/sdkwork-specs\tools\check-api-operation-patterns.mjs --workspace <workspace-root>/sdkwork-payment
+node <workspace-root>/sdkwork-specs\tools\check-api-response-envelope.mjs --workspace <workspace-root>/sdkwork-payment
+node <workspace-root>/sdkwork-specs\tools\check-pagination.mjs --workspace <workspace-root>/sdkwork-payment
 ```
 
 Expected: dependency scan has no forbidden hits and all checks pass.
@@ -461,7 +461,7 @@ Wallet recharge/refund/withdrawal UI must delegate to order SDK or host `onNavig
 Run for every touched repository:
 
 ```powershell
-node E:\sdkwork-space\sdkwork-specs\tools\check-app-sdk-consumer-imports.mjs --workspace <repo-root>
+node <workspace-root>/sdkwork-specs\tools\check-app-sdk-consumer-imports.mjs --workspace <repo-root>
 ```
 
 Expected: PASS.
@@ -471,7 +471,7 @@ Expected: PASS.
 - [ ] **Step 1: Run account verification**
 
 ```powershell
-cd E:\sdkwork-space\sdkwork-account
+cd <workspace-root>/sdkwork-account
 pnpm.cmd test
 pnpm.cmd verify
 cargo clippy --workspace --all-targets -- -D warnings
@@ -482,7 +482,7 @@ git diff --check
 - [ ] **Step 2: Run order verification**
 
 ```powershell
-cd E:\sdkwork-space\sdkwork-order
+cd <workspace-root>/sdkwork-order
 pnpm.cmd test
 pnpm.cmd verify
 cargo test --workspace
@@ -493,7 +493,7 @@ git diff --check
 - [ ] **Step 3: Run payment verification**
 
 ```powershell
-cd E:\sdkwork-space\sdkwork-payment
+cd <workspace-root>/sdkwork-payment
 pnpm.cmd test
 pnpm.cmd verify
 cargo test --workspace

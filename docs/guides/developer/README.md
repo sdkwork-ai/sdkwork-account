@@ -10,7 +10,7 @@ Local setup and verification for `sdkwork-account`.
 ## Setup
 
 ```powershell
-cd E:\sdkwork-space\sdkwork-account
+cd <workspace-root>/sdkwork-account
 pnpm install
 ```
 

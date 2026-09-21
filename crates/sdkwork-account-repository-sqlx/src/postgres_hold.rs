@@ -96,7 +96,7 @@ impl PostgresCommerceAccountStore {
         )?;
         let available = parse_amount_minor(&account.available_amount)?;
         if available < hold_amount {
-            return Err(CommerceServiceError::invalid_state(
+            return Err(CommerceServiceError::insufficient_balance(
                 "insufficient available balance for hold",
             ));
         }
@@ -106,7 +106,7 @@ impl PostgresCommerceAccountStore {
             )
             .await?;
             if i128::from(spendable) < hold_amount {
-                return Err(CommerceServiceError::invalid_state(
+                return Err(CommerceServiceError::insufficient_balance(
                     "insufficient spendable points lots for hold",
                 ));
             }
@@ -661,7 +661,7 @@ impl PostgresCommerceAccountStore {
         require_positive_amount(amount, "amount")?;
         let from_available = parse_amount_minor(&from_account.available_amount)?;
         if from_available < amount {
-            return Err(CommerceServiceError::invalid_state(
+            return Err(CommerceServiceError::insufficient_balance(
                 "insufficient available balance for transfer",
             ));
         }

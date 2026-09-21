@@ -190,6 +190,15 @@ pub enum CommerceServiceErrorKind {
     Conflict,
     Locked,
     InvalidState,
+    /// The account's available balance cannot cover the requested hold,
+    /// precharge, or transfer. This is a distinct kind (rather than generic
+    /// `InvalidState`) because it is the only commerce rejection a *caller* can
+    /// self-heal: the wallet owner must fund the account. Downstream surfaces
+    /// (cloud router gateway, agents clients) map this kind to an actionable
+    /// "recharge" problem instead of a generic upstream failure, so the
+    /// classification must survive the error boundary by type, never by
+    /// matching the human-readable message.
+    InsufficientBalance,
     Validation,
     Transport,
     UnsupportedCapability,
@@ -744,6 +753,14 @@ impl CommerceServiceError {
         Self::new(CommerceServiceErrorKind::InvalidState, message)
     }
 
+    /// Builds an insufficient-balance rejection. Callers that need to render a
+    /// funding action (recharge/membership entry point) must match on
+    /// [`CommerceServiceErrorKind::InsufficientBalance`] via [`Self::kind`]
+    /// rather than on the message text.
+    pub fn insufficient_balance(message: impl Into<String>) -> Self {
+        Self::new(CommerceServiceErrorKind::InsufficientBalance, message)
+    }
+
     pub fn validation(message: impl Into<String>) -> Self {
         Self::new(CommerceServiceErrorKind::Validation, message)
     }
@@ -776,6 +793,7 @@ impl CommerceServiceError {
             CommerceServiceErrorKind::Conflict => "conflict",
             CommerceServiceErrorKind::Locked => "locked",
             CommerceServiceErrorKind::InvalidState => "invalid-state",
+            CommerceServiceErrorKind::InsufficientBalance => "insufficient-balance",
             CommerceServiceErrorKind::Validation => "validation",
             CommerceServiceErrorKind::Transport => "transport",
             CommerceServiceErrorKind::UnsupportedCapability => "unsupported-capability",
@@ -783,6 +801,14 @@ impl CommerceServiceError {
             CommerceServiceErrorKind::Storage => "storage",
             CommerceServiceErrorKind::Unknown => "unknown",
         }
+    }
+
+    /// Exposes the error kind so downstream surfaces can classify a commerce
+    /// rejection by type instead of by message text. The insufficient-balance
+    /// path relies on this: a wallet rejection that can be fixed by funding the
+    /// account must stay distinguishable from every other state error.
+    pub fn kind(&self) -> &CommerceServiceErrorKind {
+        &self.kind
     }
 
     pub fn message(&self) -> &str {

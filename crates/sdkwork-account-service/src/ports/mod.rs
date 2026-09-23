@@ -64,8 +64,9 @@ pub trait AccountLedgerWritePort {
 /// the account ledger from their own async flows (e.g. Cloud Router usage
 /// settlement). Repository implementations own the concrete connection; the
 /// consumer depends on this port only.
-pub type AccountLedgerAppendFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<AppendLedgerEntryOutcome, CommerceServiceError>> + Send + 'a>>;
+pub type AccountLedgerAppendFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<AppendLedgerEntryOutcome, CommerceServiceError>> + Send + 'a>,
+>;
 
 pub trait AccountLedgerAppendPort: Send + Sync + std::fmt::Debug {
     fn append_ledger_entry<'a>(

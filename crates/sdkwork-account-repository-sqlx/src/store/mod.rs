@@ -254,7 +254,9 @@ mod tests {
         default_currency_code, provision_currency_code,
     };
     use sdkwork_account_service::AppendLedgerEntryCommand;
-    use sdkwork_contract_service::{CommerceAccountAssetType, CommerceLedgerDirection, CommerceMoney};
+    use sdkwork_contract_service::{
+        CommerceAccountAssetType, CommerceLedgerDirection, CommerceMoney,
+    };
 
     #[test]
     fn maps_token_bank_asset_without_forbidden_token_aliases() {

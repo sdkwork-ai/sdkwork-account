@@ -963,9 +963,7 @@ impl CommerceAccountOwnerType {
     pub fn validate(value: &str) -> Result<(), CommerceServiceError> {
         let value = value.trim();
         if value.is_empty() {
-            return Err(CommerceServiceError::validation(
-                "owner_type is required",
-            ));
+            return Err(CommerceServiceError::validation("owner_type is required"));
         }
         if value.len() > 32 {
             return Err(CommerceServiceError::validation(
@@ -996,5 +994,3 @@ impl CommerceAccountPurpose {
     pub const BURN: &str = "BURN";
     pub const SUSPENSE: &str = "SUSPENSE";
 }
-
-

@@ -4,7 +4,8 @@ use sdkwork_account_service::{
     AccountSummarySnapshot, AppendLedgerEntryCommand, AppendLedgerEntryOutcome,
     OutboxDispatchOutcome, PointsAccountSnapshot, PointsLotItem, PointsLotListQuery, StoreListPage,
     WalletAccountItem, WalletAccountListQuery, WalletOperation, WalletOperationQuery,
-    WalletOverview, WalletTransactionDetailQuery, WalletTransactionItem, WalletTransactionListQuery,
+    WalletOverview, WalletTransactionDetailQuery, WalletTransactionItem,
+    WalletTransactionListQuery,
 };
 use sdkwork_contract_service::{
     CommerceAccountAssetType, CommerceLedgerDirection, CommerceMoney, CommercePoints,
@@ -16,15 +17,14 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use crate::store::{
     account_guard::{ensure_points_lot_debit_complete, require_positive_amount},
     account_status_label, account_summary, asset_code_from_type, asset_type_from_code, balance,
-    billing_projection, currency_code_for_command, finalize_list_page,
-    format_i64, idempotency_lock_expires_at_rfc3339, map_idempotency_insert_error, next_entity_id,
+    billing_projection, currency_code_for_command, finalize_list_page, format_i64,
+    idempotency_lock_expires_at_rfc3339, map_idempotency_insert_error, next_entity_id,
     next_entity_uuid, optional_org_string, org_id_from_option,
     outbox::{build_ledger_appended_outbox, insert_outbox_event_postgres, OutboxEventInsert},
     parse_subject_i64, points_lot_status_label, provision_currency_code,
-    resolve_idempotency_from_row_fields,
-    resolve_list_sql_paging, store_error, IdempotencyRecordAction, ACCOUNT_PURPOSE_GENERAL,
-    ACCOUNT_STATUS_ACTIVE, LEDGER_APPEND_SCOPE, OWNER_TYPE_USER, POINTS_LOT_DEBIT_BATCH_SIZE,
-    POINTS_LOT_STATUS_DEPLETED,
+    resolve_idempotency_from_row_fields, resolve_list_sql_paging, store_error,
+    IdempotencyRecordAction, ACCOUNT_PURPOSE_GENERAL, ACCOUNT_STATUS_ACTIVE, LEDGER_APPEND_SCOPE,
+    OWNER_TYPE_USER, POINTS_LOT_DEBIT_BATCH_SIZE, POINTS_LOT_STATUS_DEPLETED,
 };
 
 #[derive(Debug, Clone)]
@@ -39,7 +39,9 @@ impl AccountLedgerAppendPort for PostgresCommerceAccountStore {
         request_hash: CommerceRequestHash,
     ) -> sdkwork_account_service::AccountLedgerAppendFuture<'a> {
         Box::pin(PostgresCommerceAccountStore::append_ledger_entry(
-            self, command, request_hash,
+            self,
+            command,
+            request_hash,
         ))
     }
 }
@@ -400,7 +402,8 @@ impl PostgresCommerceAccountStore {
         // (id=0 / zero uuid): create the real account so every read surface
         // (token bank, cash, points, summary, gateway balance) returns a
         // genuine entity identity.
-        self.ensure_wallet_account_for_asset(scoped, &asset_type).await
+        self.ensure_wallet_account_for_asset(scoped, &asset_type)
+            .await
     }
 
     /// Idempotently provisions the standard owner accounts (cash, points,
@@ -430,7 +433,10 @@ impl PostgresCommerceAccountStore {
                 Some(asset_type.clone()),
             )?;
             query.owner_type = owner_type.map(str::to_owned);
-            accounts.push(self.ensure_wallet_account_for_asset(query, &asset_type).await?);
+            accounts.push(
+                self.ensure_wallet_account_for_asset(query, &asset_type)
+                    .await?,
+            );
         }
         Ok(accounts)
     }
@@ -1276,8 +1282,8 @@ fn map_wallet_transaction(
 }
 
 fn map_points_lot(row: &sqlx::postgres::PgRow) -> Result<PointsLotItem, CommerceServiceError> {
-    let expires_at = optional_timestamp_cell(row, "expires_at")
-        .filter(|value| !value.trim().is_empty());
+    let expires_at =
+        optional_timestamp_cell(row, "expires_at").filter(|value| !value.trim().is_empty());
     Ok(PointsLotItem {
         id: format_i64(integer_cell(row, "id")),
         uuid: string_cell(row, "uuid"),

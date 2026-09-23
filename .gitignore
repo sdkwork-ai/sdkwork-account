@@ -87,3 +87,15 @@ sdks/**/*-typescript/src/*.js
 sdks/**/*-typescript/src/*.d.ts
 sdks/**/composed/*.js
 sdks/**/composed/*.d.ts
+
+# Compiler emit beside source is not content (REPOSITORY_BASELINE_SPEC.md section 2).
+# The negations below keep authored ambient declarations committable.
+**/src/**/*.js
+**/src/**/*.d.ts
+**/composed/**/*.js
+**/composed/**/*.d.ts
+!**/src/**/vite-env.d.ts
+!**/src/**/global.d.ts
+!**/src/**/shims.d.ts
+
+# The negations keep authored ambient declarations committable.

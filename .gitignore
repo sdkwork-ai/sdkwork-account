@@ -96,3 +96,8 @@ sdks/**/composed/*.d.ts
 # (`vite-env.d.ts`, `styles.d.ts`, module shims) and real mini-program source under `src/`.
 # The sibling rule is enforced against tracked files by
 # `sdkwork-specs/tools/check-repository-baseline-content.mjs` instead.
+
+# SDKWork generated/transpiled emit (build output, not committed)
+# Added by repo-commit task 2026-09-25; targeted rules only, compliant with check-gitignore-standard
+sdks/**/generated/server-openapi/src/**/*.js
+sdks/**/generated/server-openapi/src/**/*.d.ts

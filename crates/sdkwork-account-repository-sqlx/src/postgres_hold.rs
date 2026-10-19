@@ -322,6 +322,33 @@ impl PostgresCommerceAccountStore {
         })
     }
 
+    /// Resolves the amount actually captured from a hold.
+    ///
+    /// Legacy callers omit `settled_amount` and capture the full hold. Capture must
+    /// be positive and cannot exceed the frozen amount; returning the difference to
+    /// available balance is the caller's atomic settlement operation.
+    fn validated_capture_amounts(
+        hold_amount: &str,
+        settled_amount: Option<&str>,
+    ) -> Result<(i128, i128), CommerceServiceError> {
+        let hold_amount = parse_amount_minor(hold_amount)?;
+        let settled_amount = match settled_amount {
+            Some(value) => parse_amount_minor(value)?,
+            None => hold_amount,
+        };
+        if settled_amount <= 0 {
+            return Err(CommerceServiceError::validation(
+                "settled_amount must be a positive amount",
+            ));
+        }
+        if settled_amount > hold_amount {
+            return Err(CommerceServiceError::invalid_state(
+                "settled_amount exceeds the hold amount",
+            ));
+        }
+        Ok((hold_amount, settled_amount))
+    }
+
     pub async fn settle_account_hold(
         &self,
         command: SettleAccountHoldCommand,
@@ -368,7 +395,8 @@ impl PostgresCommerceAccountStore {
             ));
         }
         ensure_hold_not_expired(hold.expires_at.as_deref(), &now)?;
-        let hold_amount = parse_amount_minor(&hold.amount)?;
+        let (hold_amount, settled_amount) =
+            Self::validated_capture_amounts(&hold.amount, command.settled_amount.as_deref())?;
         let account = load_account_by_internal_id(
             &mut tx,
             tenant_id,
@@ -381,10 +409,19 @@ impl PostgresCommerceAccountStore {
                 "hold settle exceeds frozen balance",
             ));
         }
+        // The held amount is already excluded from available balance. Capturing
+        // less than the full hold must return the difference in the same
+        // transaction as the ledger debit, otherwise a crash between "release"
+        // and "capture" would lose the charge (or double-charge on retry).
+        let available = parse_amount_minor(&account.available_amount)?;
+        let returned = hold_amount - settled_amount;
+        let next_available = available.checked_add(returned).ok_or_else(|| {
+            CommerceServiceError::storage("hold settle available balance overflow")
+        })?;
         let account = update_account_balances(
             &mut tx,
             &account,
-            &account.available_amount,
+            &format_amount_minor(next_available),
             &format_amount_minor(frozen - hold_amount),
             &now,
         )
@@ -395,7 +432,7 @@ impl PostgresCommerceAccountStore {
             &mut tx,
             SettlementLedgerInput {
                 account: &account,
-                amount: hold_amount,
+                amount: settled_amount,
                 asset_type,
                 command: &command,
                 hold_id: parse_subject_i64("hold_id", &hold.id)?,
@@ -408,11 +445,12 @@ impl PostgresCommerceAccountStore {
         sqlx::query(
             r#"
             UPDATE acct_hold
-            SET status = $1, settled_amount = amount, settled_at = $2::timestamptz, updated_at = $3::timestamptz, version = version + 1
-            WHERE tenant_id = $4 AND uuid = $5 AND status = $6
+            SET status = $1, settled_amount = $2::bigint, settled_at = $3::timestamptz, updated_at = $4::timestamptz, version = version + 1
+            WHERE tenant_id = $5 AND uuid = $6 AND status = $7
             "#,
         )
         .bind(HOLD_STATUS_SETTLED)
+        .bind(format_amount_minor(settled_amount))
         .bind(&now)
         .bind(&now)
         .bind(tenant_id)
@@ -2053,4 +2091,34 @@ fn integer_cell(row: &sqlx::postgres::PgRow, name: &str) -> i64 {
         .map(i64::from)
         .or_else(|_| row.try_get::<i64, _>(name))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_hold_capture_remains_the_default() {
+        assert_eq!(
+            (1_000_000, 1_000_000),
+            PostgresCommerceAccountStore::validated_capture_amounts("1000000", None).unwrap()
+        );
+    }
+
+    #[test]
+    fn partial_capture_is_bounded_by_the_hold() {
+        assert_eq!(
+            (1_000_000, 800_000),
+            PostgresCommerceAccountStore::validated_capture_amounts("1000000", Some("800000"))
+                .unwrap()
+        );
+        assert!(PostgresCommerceAccountStore::validated_capture_amounts(
+            "1000000",
+            Some("1000001")
+        )
+        .is_err());
+        assert!(
+            PostgresCommerceAccountStore::validated_capture_amounts("1000000", Some("0")).is_err()
+        );
+    }
 }

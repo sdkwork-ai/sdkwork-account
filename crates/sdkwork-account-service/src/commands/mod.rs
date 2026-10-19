@@ -73,6 +73,10 @@ pub struct SettleAccountHoldCommand {
     pub transaction_no: String,
     pub request_no: String,
     pub idempotency_key: String,
+    /// Actual amount to capture from the hold, in the account's smallest unit.
+    /// `None` keeps the historical full-hold capture; `Some` captures the amount
+    /// and returns the remainder to available balance atomically.
+    pub settled_amount: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -151,7 +155,20 @@ impl SettleAccountHoldCommand {
             transaction_no: required_text("transaction_no", transaction_no)?,
             request_no: required_text("request_no", request_no)?,
             idempotency_key: required_text("idempotency_key", idempotency_key)?,
+            settled_amount: None,
         })
+    }
+
+    /// Captures only `settled_amount` from the hold and returns the remainder to
+    /// the available balance. The repository validates
+    /// `0 < settled_amount <= hold.amount` and applies the capture, remainder
+    /// release, and ledger write in one transaction.
+    pub fn with_settled_amount(
+        mut self,
+        settled_amount: &str,
+    ) -> Result<Self, CommerceServiceError> {
+        self.settled_amount = Some(required_text("settled_amount", settled_amount)?);
+        Ok(self)
     }
 }
 

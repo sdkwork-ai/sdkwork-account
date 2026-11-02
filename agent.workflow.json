@@ -70,8 +70,43 @@
   ],
   "toolchains": {},
   "lifecycle": {},
-  "targets": {},
+  "targets": [
+    {
+      "id": "linux-x64-standalone-server-tar-gz",
+      "packageId": "linux-x64-standalone-server-tar-gz",
+      "profileBinding": "fixed",
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server",
+      "profile": "server",
+      "platform": "linux",
+      "architecture": "x64",
+      "formats": [
+        "tar.gz"
+      ],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": [
+        "dist/server/*.tar.gz"
+      ]
+    },
+    {
+      "id": "linux-x64-cloud-server-tar-gz",
+      "packageId": "linux-x64-cloud-server-tar-gz",
+      "profileBinding": "fixed",
+      "deploymentProfile": "cloud",
+      "runtimeTarget": "server",
+      "profile": "server",
+      "platform": "linux",
+      "architecture": "x64",
+      "formats": [
+        "tar.gz"
+      ],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": [
+        "dist/server/*.tar.gz"
+      ]
+    }
+  ],
   "security": {},
   "publish": {},
-  "deployments": {}
+  "deployments": []
 }

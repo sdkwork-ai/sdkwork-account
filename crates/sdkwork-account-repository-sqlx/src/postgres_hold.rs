@@ -250,6 +250,11 @@ impl PostgresCommerceAccountStore {
             parse_subject_i64("account_id", &hold.account_id)?,
         )
         .await?;
+        if account.organization_id != hold_organization_id {
+            return Err(CommerceServiceError::not_found(
+                "account hold organization scope does not match the account",
+            ));
+        }
         let available = parse_amount_minor(&account.available_amount)?;
         let frozen = parse_amount_minor(&account.frozen_amount)?;
         if frozen < hold_amount {
@@ -407,6 +412,11 @@ impl PostgresCommerceAccountStore {
             parse_subject_i64("account_id", &hold.account_id)?,
         )
         .await?;
+        if account.organization_id != hold_organization_id {
+            return Err(CommerceServiceError::not_found(
+                "account hold organization scope does not match the account",
+            ));
+        }
         let frozen = parse_amount_minor(&account.frozen_amount)?;
         if frozen < hold_amount {
             return Err(CommerceServiceError::invalid_state(

@@ -242,6 +242,7 @@ impl PostgresCommerceAccountStore {
             ));
         }
         ensure_hold_not_expired(hold.expires_at.as_deref(), &now)?;
+        let hold_organization_id = org_id_from_option(hold.organization_id.as_deref())?;
         let hold_amount = parse_amount_minor(&hold.amount)?;
         let account = load_account_by_internal_id(
             &mut tx,
@@ -270,6 +271,7 @@ impl PostgresCommerceAccountStore {
             UPDATE acct_hold
             SET status = $1, released_amount = amount, released_at = $2::timestamptz, updated_at = $3::timestamptz, version = version + 1
             WHERE tenant_id = $4 AND uuid = $5 AND status = $6
+              AND organization_id = $7
             "#,
         )
         .bind(HOLD_STATUS_RELEASED)
@@ -278,6 +280,7 @@ impl PostgresCommerceAccountStore {
         .bind(tenant_id)
         .bind(&command.hold_id)
         .bind(HOLD_STATUS_HELD)
+        .bind(hold_organization_id)
         .execute(&mut *tx)
         .await
         .map_err(|error| store_error("failed to release account hold", error))?;
@@ -395,6 +398,7 @@ impl PostgresCommerceAccountStore {
             ));
         }
         ensure_hold_not_expired(hold.expires_at.as_deref(), &now)?;
+        let hold_organization_id = org_id_from_option(hold.organization_id.as_deref())?;
         let (hold_amount, settled_amount) =
             Self::validated_capture_amounts(&hold.amount, command.settled_amount.as_deref())?;
         let account = load_account_by_internal_id(
@@ -447,6 +451,7 @@ impl PostgresCommerceAccountStore {
             UPDATE acct_hold
             SET status = $1, settled_amount = $2::bigint, settled_at = $3::timestamptz, updated_at = $4::timestamptz, version = version + 1
             WHERE tenant_id = $5 AND uuid = $6 AND status = $7
+              AND organization_id = $8
             "#,
         )
         .bind(HOLD_STATUS_SETTLED)
@@ -456,6 +461,7 @@ impl PostgresCommerceAccountStore {
         .bind(tenant_id)
         .bind(&command.hold_id)
         .bind(HOLD_STATUS_HELD)
+        .bind(hold_organization_id)
         .execute(&mut *tx)
         .await
         .map_err(|error| store_error("failed to settle account hold", error))?;
@@ -1083,6 +1089,7 @@ async fn expire_one_expired_hold_postgres(
         UPDATE acct_hold
         SET status = $1, released_amount = amount, released_at = $2::timestamptz, updated_at = $3::timestamptz, version = version + 1
         WHERE tenant_id = $4 AND uuid = $5 AND status = $6
+          AND organization_id = $7
         "#,
     )
     .bind(crate::store::HOLD_STATUS_EXPIRED)
@@ -1091,6 +1098,7 @@ async fn expire_one_expired_hold_postgres(
     .bind(tenant_id)
     .bind(hold_uuid)
     .bind(HOLD_STATUS_HELD)
+    .bind(account.organization_id)
     .execute(&mut **tx)
     .await
     .map_err(|error| store_error("failed to expire account hold", error))?;
@@ -1596,6 +1604,7 @@ async fn update_account_balances(
         UPDATE acct_account
         SET available_amount = $1::bigint, frozen_amount = $2::bigint, version = $3, updated_at = $4::timestamptz
         WHERE id = $5 AND version = $6
+          AND tenant_id = $7 AND organization_id = $8
         "#,
     )
     .bind(available_amount)
@@ -1604,6 +1613,8 @@ async fn update_account_balances(
     .bind(now)
     .bind(account.id)
     .bind(account.version)
+    .bind(account.tenant_id)
+    .bind(account.organization_id)
     .execute(&mut **tx)
     .await
     .map_err(|error| store_error("failed to update account balances", error))?;

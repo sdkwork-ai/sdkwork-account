@@ -409,6 +409,7 @@ async fn expire_one_points_lot(
         UPDATE acct_account
         SET available_amount = $1::bigint, version = $2, updated_at = $3::timestamptz
         WHERE id = $4 AND version = $5
+          AND tenant_id = $6 AND organization_id = $7
         "#,
     )
     .bind(&balance_after)
@@ -416,6 +417,8 @@ async fn expire_one_points_lot(
     .bind(now)
     .bind(account.id)
     .bind(account.version)
+    .bind(account.tenant_id)
+    .bind(account.organization_id)
     .execute(&mut **tx)
     .await
     .map_err(|error| store_error("failed to update account for lot expiry", error))?;

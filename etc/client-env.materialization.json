@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.client-env-materialization",
+  "application": "sdkwork-account",
+  "profiles": [
+    "standalone.development",
+    "standalone.test",
+    "standalone.staging",
+    "standalone.demo",
+    "standalone.production",
+    "cloud.development",
+    "cloud.test",
+    "cloud.staging",
+    "cloud.demo",
+    "cloud.production"
+  ],
+  "surfaces": [
+    {
+      "id": "sdkwork-account-pc",
+      "root": "apps/sdkwork-account-pc",
+      "format": "vite",
+      "runtimeTarget": "browser",
+      "bindings": {},
+      "accessToken": {
+        "appId": "sdkwork-account-pc",
+        "tenantId": "100001",
+        "organizationId": "0",
+        "permissionScope": [
+          "iam:self"
+        ]
+      }
+    }
+  ],
+  "sourceIdentity": {
+    "deploymentProfileKeys": [
+      "SDKWORK_ACCOUNT_DEPLOYMENT_PROFILE",
+      "SDKWORK_DEPLOYMENT_PROFILE"
+    ],
+    "environmentKeys": [
+      "SDKWORK_ACCOUNT_ENVIRONMENT",
+      "SDKWORK_ENVIRONMENT"
+    ],
+    "profileIdKeys": [
+      "SDKWORK_ACCOUNT_PROFILE_ID",
+      "SDKWORK_PROFILE_ID"
+    ]
+  }
+}

@@ -21,7 +21,11 @@
     "grantMode": "current",
     "platform": "WEB",
     "tenantId": "100001",
-    "organizationId": "0"
+    "organizationId": "0",
+    "appId": "sdkwork-account-pc",
+    "accessTokenPermissionScope": [
+      "iam:self"
+    ]
   },
   "runtime": {
     "family": "web",

@@ -838,7 +838,7 @@ impl PostgresCommerceAccountStore {
                 (id, uuid, tenant_id, organization_id, from_account_id, to_account_id, asset_code,
                  amount, status, business_type, business_no, idempotency_key, request_no,
                  journal_id, trace_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::timestamptz)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, CAST($8 AS BIGINT), $9, $10, $11, $12, $13, $14, $15, $16::timestamptz)
             "#,
         )
         .bind(transfer_id)

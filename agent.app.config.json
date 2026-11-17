@@ -15,7 +15,10 @@
     "appId": "sdkwork-account",
     "serviceId": "sdkwork-account",
     "owner": "sdkwork-account",
-    "domain": "account"
+    "domain": "account",
+    "accessTokenPermissionScope": [
+      "iam:self"
+    ]
   },
   "runtime": {
     "family": "server",

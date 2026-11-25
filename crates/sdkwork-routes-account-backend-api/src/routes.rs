@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use crate::web_bootstrap::wrap_router_with_web_framework_from_env;
 use crate::{
-    backend_hold_router_with_postgres_pool, backend_outbox_router_with_postgres_pool,
+    backend_billing_policy_router_with_postgres_pool, backend_hold_router_with_postgres_pool,
+    backend_outbox_router_with_postgres_pool, backend_wallet_read_router_with_postgres_pool,
     backend_wallet_router_with_postgres_pool,
 };
 
@@ -86,6 +87,10 @@ pub fn build_account_backend_router(host: Arc<AccountServiceHost>) -> Router {
     router = router.merge(
         backend_wallet_router_with_postgres_pool(pool.clone())
             .merge(backend_hold_router_with_postgres_pool(pool.clone()))
+            .merge(backend_billing_policy_router_with_postgres_pool(
+                pool.clone(),
+            ))
+            .merge(backend_wallet_read_router_with_postgres_pool(pool.clone()))
             .merge(backend_outbox_router_with_postgres_pool(pool)),
     );
 

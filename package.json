@@ -18,6 +18,8 @@
     "start": "cargo run -p sdkwork-api-account-standalone-gateway --bin sdkwork-api-account-standalone-gateway",
     "test:node": "node --test --test-reporter=spec tests/static/placeholder.test.mjs",
     "test:vitest": "node ./node_modules/vitest/vitest.mjs run --config vitest.config.ts --configLoader native --pool forks",
+    "test:ledger-drill": "node scripts/run-ledger-drill.mjs",
+    "test:domain": "node scripts/run-domain-tests.mjs",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
     "check:pagination": "node ../sdkwork-specs/tools/check-pagination.mjs --workspace .",
     "check:cors-standard": "node ../sdkwork-specs/tools/check-cors-standard.mjs --root .",
@@ -62,13 +64,13 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^29.0.1",
+    "lucide-react": "^1.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "rollup": "^4.68.8",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
-    "vitest": "^4.1.2",
-    "lucide-react": "^1.7.0",
-    "@sdkwork/app-topology": "workspace:*"
+    "vitest": "^4.1.2"
   },
   "exports": {
     ".": {

@@ -1,0 +1,53 @@
+{
+  "name": "@sdkwork/account-pc-admin-accounts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Account centre administration: wallets, holds, ledger, allowance lots, billing policy and admission simulation.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./contribution": {
+      "types": "./src/contribution.ts",
+      "import": "./src/contribution.ts",
+      "default": "./src/contribution.ts"
+    },
+    "./i18n": {
+      "types": "./src/i18n/index.ts",
+      "import": "./src/i18n/index.ts",
+      "default": "./src/i18n/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0 <20.0.0",
+    "react-dom": ">=18.2.0 <20.0.0"
+  },
+  "sdkwork": {
+    "workspace": "sdkwork-account",
+    "architecture": "pc-react",
+    "domain": "commerce",
+    "capability": "accounts",
+    "surface": "backend-admin",
+    "status": "scaffold"
+  }
+}

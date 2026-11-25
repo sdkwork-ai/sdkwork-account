@@ -20,6 +20,9 @@ pub fn account_service_contract() -> CommerceServiceContract {
             "wallet.holds.settle",
             "wallet.holds.release",
             "wallet.transfers.create",
+            "wallet.billing_policies.upsert",
+            "wallet.billing_policies.activate",
+            "wallet.billing_policies.deactivate",
         ],
         vec![
             "accounts.current.summary.retrieve",
@@ -40,6 +43,8 @@ pub fn account_service_contract() -> CommerceServiceContract {
             "wallet.holds.list",
             "wallet.holds.retrieve",
             "billing.history.list",
+            "wallet.billing_policies.list",
+            "wallet.billing_policies.resolve",
         ],
         vec![
             crate::ports::ACCOUNT_REPOSITORY_PORT,
@@ -47,6 +52,9 @@ pub fn account_service_contract() -> CommerceServiceContract {
             crate::ports::ACCOUNT_LEDGER_WRITE_PORT,
             crate::ports::BILLING_HISTORY_READ_PORT,
             crate::ports::IDEMPOTENCY_REPOSITORY_PORT,
+            crate::ports::BILLING_POLICY_RESOLVE_PORT,
+            crate::ports::BILLING_POLICY_STORE_PORT,
+            crate::ports::BILLING_ADMISSION_PORT,
         ],
         true,
     )

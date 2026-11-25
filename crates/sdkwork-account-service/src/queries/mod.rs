@@ -444,3 +444,131 @@ fn optional_text(value: Option<&str>) -> Option<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
+
+// ---------------------------------------------------------------------------
+// Billing policy (account centre)
+// ---------------------------------------------------------------------------
+
+/// Resolution scope values persisted on a policy row.
+pub const BILLING_POLICY_SCOPE_PLATFORM: i16 = 0;
+pub const BILLING_POLICY_SCOPE_TENANT: i16 = 1;
+pub const BILLING_POLICY_SCOPE_ORGANIZATION: i16 = 2;
+pub const BILLING_POLICY_SCOPE_USER: i16 = 3;
+pub const BILLING_POLICY_SCOPE_API_KEY: i16 = 4;
+
+/// Asks for the policy that governs one subject right now.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct BillingPolicyResolveQuery {
+    pub tenant_id: String,
+    pub organization_id: Option<String>,
+    pub owner_user_id: String,
+    /// API key issuing the call, when the caller is a key rather than a session.
+    pub api_key_id: Option<String>,
+}
+
+/// Lists stored policies for the admin surface.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct BillingPolicyListQuery {
+    pub tenant_id: String,
+    pub organization_id: Option<String>,
+    pub scope_type: Option<i16>,
+    pub status: Option<i16>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+/// One policy row as the account centre reads and writes it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct BillingPolicyItem {
+    pub id: String,
+    pub uuid: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub policy_code: String,
+    pub name: String,
+    pub scope_type: i16,
+    pub scope_id: String,
+    pub priority: i32,
+    pub revision: i64,
+    pub status: i16,
+    pub charge_mode: String,
+    pub settlement_mode: String,
+    pub precharge_ratio: String,
+    pub output_token_ceiling: i64,
+    pub input_token_source: String,
+    pub hold_ttl_seconds: i64,
+    pub min_hold_points: i64,
+    pub max_hold_share: String,
+    pub admission_mode: String,
+    pub overdraft_envelope_points: i64,
+    pub credit_limit_points: i64,
+    pub allowance_period: Option<String>,
+    pub allowance_quota: Option<i64>,
+    pub allowance_reset_mode: Option<String>,
+    pub overage_policy: String,
+    pub effective_from: String,
+    pub effective_to: Option<String>,
+    pub updated_at: String,
+}
+
+impl BillingPolicyItem {
+    /// Decodes the stored row into admission parameters.
+    ///
+    /// Unknown vocabulary is reported as a storage fault instead of silently
+    /// falling back to a default: a wrong funding mode is a money bug, not a
+    /// cosmetic one.
+    pub fn params(&self) -> Result<crate::domain::BillingPolicyParams, CommerceServiceError> {
+        use crate::domain::{parse_bps, AdmissionMode, ChargeMode, OveragePolicy, SettlementMode};
+        let charge_mode = ChargeMode::parse(&self.charge_mode).ok_or_else(|| {
+            CommerceServiceError::storage(format!(
+                "unknown charge_mode {:?} on billing policy {}",
+                self.charge_mode, self.id
+            ))
+        })?;
+        let settlement_mode = SettlementMode::parse(&self.settlement_mode).ok_or_else(|| {
+            CommerceServiceError::storage(format!(
+                "unknown settlement_mode {:?} on billing policy {}",
+                self.settlement_mode, self.id
+            ))
+        })?;
+        let admission_mode = AdmissionMode::parse(&self.admission_mode).ok_or_else(|| {
+            CommerceServiceError::storage(format!(
+                "unknown admission_mode {:?} on billing policy {}",
+                self.admission_mode, self.id
+            ))
+        })?;
+        let overage_policy = OveragePolicy::parse(&self.overage_policy).ok_or_else(|| {
+            CommerceServiceError::storage(format!(
+                "unknown overage_policy {:?} on billing policy {}",
+                self.overage_policy, self.id
+            ))
+        })?;
+        let precharge_ratio_bps = parse_bps(&self.precharge_ratio).ok_or_else(|| {
+            CommerceServiceError::storage(format!(
+                "invalid precharge_ratio {:?} on billing policy {}",
+                self.precharge_ratio, self.id
+            ))
+        })?;
+        let max_hold_share_bps = parse_bps(&self.max_hold_share).ok_or_else(|| {
+            CommerceServiceError::storage(format!(
+                "invalid max_hold_share {:?} on billing policy {}",
+                self.max_hold_share, self.id
+            ))
+        })?;
+        let params = crate::domain::BillingPolicyParams {
+            charge_mode,
+            settlement_mode,
+            admission_mode,
+            overage_policy,
+            precharge_ratio_bps,
+            output_token_ceiling: self.output_token_ceiling,
+            hold_ttl_seconds: self.hold_ttl_seconds,
+            min_hold_points: self.min_hold_points,
+            max_hold_share_bps,
+            overdraft_envelope_points: self.overdraft_envelope_points,
+            credit_limit_points: self.credit_limit_points,
+        };
+        params.validate()?;
+        Ok(params)
+    }
+}

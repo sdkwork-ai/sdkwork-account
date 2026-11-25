@@ -3,7 +3,8 @@ use std::pin::Pin;
 
 use crate::{
     AccountLedgerQuery, AccountSummary, AccountSummaryQuery, AppendLedgerEntryCommand,
-    AppendLedgerEntryOutcome, BillingHistoryItem, BillingHistoryListQuery, LedgerEntryDraft,
+    AppendLedgerEntryOutcome, BillingAuthorizationQuery, BillingHistoryItem,
+    BillingHistoryListQuery, BillingPolicyItem, BillingPolicyResolveQuery, LedgerEntryDraft,
     StoreListPage, WalletAccountItem, WalletAccountListQuery, WalletOperation,
     WalletOperationQuery, WalletOverview, WalletTransactionDetailQuery, WalletTransactionItem,
     WalletTransactionListQuery,
@@ -89,3 +90,43 @@ pub const ACCOUNT_LEDGER_WRITE_PORT: &str = "account.ledger.write";
 pub const ACCOUNT_LEDGER_APPEND_PORT: &str = "account.ledger.append";
 pub const BILLING_HISTORY_READ_PORT: &str = "billing.history.read";
 pub const IDEMPOTENCY_REPOSITORY_PORT: &str = "idempotency.repository";
+
+/// Async billing-policy resolution boundary.
+///
+/// The routing runtime links this crate and resolves the funding policy for each
+/// invocation on its own async path, so the port is async exactly like
+/// [`AccountLedgerAppendPort`]: the repository owns the connection, the consumer
+/// depends on this trait only, and neither side learns about the other's storage.
+pub type BillingPolicyResolveFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<Option<BillingPolicyItem>, CommerceServiceError>> + Send + 'a>,
+>;
+
+pub trait BillingPolicyResolvePort: Send + Sync + std::fmt::Debug {
+    fn resolve_billing_policy<'a>(
+        &'a self,
+        query: BillingPolicyResolveQuery,
+    ) -> BillingPolicyResolveFuture<'a>;
+}
+
+pub const BILLING_POLICY_RESOLVE_PORT: &str = "billing.policy.resolve";
+pub const BILLING_POLICY_STORE_PORT: &str = "billing.policy.store";
+
+/// Async admission boundary.
+///
+/// The routing runtime links this crate and asks the account side to decide one
+/// request: the account side resolves the funding policy, reads the wallet
+/// snapshot and applies [`crate::domain::authorize`], so neither side duplicates
+/// the funding rules.
+pub type BillingAdmissionFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<BillingAdmission, CommerceServiceError>> + Send + 'a>>;
+
+pub use sdkwork_contract_service::BillingAdmission;
+
+pub trait BillingAdmissionPort: Send + Sync + std::fmt::Debug {
+    fn authorize_billing<'a>(
+        &'a self,
+        query: BillingAuthorizationQuery,
+    ) -> BillingAdmissionFuture<'a>;
+}
+
+pub const BILLING_ADMISSION_PORT: &str = "billing.admission";

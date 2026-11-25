@@ -1,3 +1,6 @@
+mod billing_policy;
+pub use billing_policy::*;
+
 use sdkwork_contract_service::{
     CommerceAccountAssetType, CommerceLedgerDirection, CommerceMoney, CommercePoints,
     CommerceServiceError,

@@ -1004,6 +1004,651 @@
         ],
         "parameters": []
       }
+    },
+    "/backend/v3/api/wallet/billing_policies": {
+      "get": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "billingPolicies.list",
+        "description": "Lists stored account billing policies for the operator surface.",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "description": "Organization scope to list; omitted means the tenant scope.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scopeType",
+            "in": "query",
+            "required": false,
+            "description": "Resolution scope filter.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Lifecycle filter: 1 live, 0 retired.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page index.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBillingPolicyListResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "billingPolicies.create",
+        "description": "Stores the next revision of a billing policy for one (scope, priority); the previous live revision is retired in the same transaction.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertWalletBillingPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBillingPolicyMutationResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/billing_policies/{policyId}/activate": {
+      "post": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "billingPolicies.activate",
+        "description": "Enables a stored billing policy revision.",
+        "parameters": [
+          {
+            "name": "policyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBillingPolicyMutationResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/billing_policies/{policyId}/deactivate": {
+      "post": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "billingPolicies.deactivate",
+        "description": "Retires a stored billing policy revision and frees its scope slot.",
+        "parameters": [
+          {
+            "name": "policyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBillingPolicyMutationResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/billing_policy": {
+      "get": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "billingPolicy.resolve",
+        "description": "Resolves the policy governing a subject. A null item means no stored row applies and the documented platform defaults govern it.",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "description": "Organization scope of the call.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerUserId",
+            "in": "query",
+            "required": true,
+            "description": "Subject whose funding policy is resolved.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "query",
+            "required": false,
+            "description": "API key issuing the call, when the caller is a key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBillingPolicyItemResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/billing_policy/authorize": {
+      "post": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "billingPolicy.authorize",
+        "description": "Answers what the account side would decide for a hypothetical charge without creating a hold. This is the operator simulate primitive and the routing runtime read-only diagnostic.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizeWalletBillingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBillingAdmissionResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/accounts": {
+      "get": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "accounts.list",
+        "description": "Lists the wallet accounts of one owner with available, frozen and pending amounts.",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "description": "Organization scope of the wallet; omitted means the tenant scope.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerUserId",
+            "in": "query",
+            "required": false,
+            "description": "Wallet owner; omitted means the authenticated operator.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerType",
+            "in": "query",
+            "required": false,
+            "description": "Wallet owner kind.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "USER",
+                "ORGANIZATION"
+              ]
+            }
+          },
+          {
+            "name": "assetType",
+            "in": "query",
+            "required": false,
+            "description": "Asset filter.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cash",
+                "points",
+                "token_bank"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletAccountListResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/ledger_entries": {
+      "get": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "ledgerEntries.list",
+        "description": "Lists ledger entries of one wallet owner, most recent first.",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "description": "Organization scope of the wallet; omitted means the tenant scope.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerUserId",
+            "in": "query",
+            "required": false,
+            "description": "Wallet owner; omitted means the authenticated operator.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerType",
+            "in": "query",
+            "required": false,
+            "description": "Wallet owner kind.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "USER",
+                "ORGANIZATION"
+              ]
+            }
+          },
+          {
+            "name": "assetType",
+            "in": "query",
+            "required": false,
+            "description": "Asset filter.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cash",
+                "points",
+                "token_bank"
+              ]
+            }
+          },
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "description": "Restrict to one account.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Keyset cursor for the next page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page index.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletLedgerEntryListResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
+    },
+    "/backend/v3/api/wallet/points_lots": {
+      "get": {
+        "tags": [
+          "wallet"
+        ],
+        "operationId": "points.lots.list",
+        "description": "Lists the allowance points lots of one wallet owner, including remaining amount and expiry.",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "description": "Organization scope of the wallet; omitted means the tenant scope.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerUserId",
+            "in": "query",
+            "required": false,
+            "description": "Wallet owner; omitted means the authenticated operator.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerType",
+            "in": "query",
+            "required": false,
+            "description": "Wallet owner kind.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "USER",
+                "ORGANIZATION"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page index.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletPointsLotListResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2499,6 +3144,984 @@
             "$ref": "#/components/schemas/WalletTransferMutationResult"
           }
         }
+      },
+      "PageInfo": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "offset",
+              "cursor"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "totalItems": {
+            "description": "Total rows across all pages.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletBillingPolicy": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "uuid",
+          "tenantId",
+          "organizationId",
+          "policyCode",
+          "name",
+          "scopeType",
+          "scopeId",
+          "priority",
+          "revision",
+          "status",
+          "chargeMode",
+          "settlementMode",
+          "prechargeRatio",
+          "outputTokenCeiling",
+          "inputTokenSource",
+          "holdTtlSeconds",
+          "minHoldPoints",
+          "maxHoldShare",
+          "admissionMode",
+          "overdraftEnvelopePoints",
+          "creditLimitPoints",
+          "overagePolicy",
+          "effectiveFrom",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "policyCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopeType": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 platform, 1 tenant, 2 organization, 3 user, 4 api key."
+          },
+          "scopeId": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "revision": {
+            "description": "Revision number of this scope policy.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 live, 0 retired."
+          },
+          "chargeMode": {
+            "type": "string",
+            "enum": [
+              "prepaid_balance",
+              "credit_line",
+              "postpaid_invoice",
+              "plan_allowance",
+              "free_trial",
+              "byok"
+            ]
+          },
+          "settlementMode": {
+            "type": "string",
+            "enum": [
+              "synchronous",
+              "asynchronous"
+            ]
+          },
+          "prechargeRatio": {
+            "type": "string",
+            "description": "Decimal multiplier applied to the estimated charge."
+          },
+          "outputTokenCeiling": {
+            "description": "Ceiling applied to a client-declared output-token cap.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "inputTokenSource": {
+            "type": "string",
+            "enum": [
+              "bytes_div4",
+              "tokenizer"
+            ]
+          },
+          "holdTtlSeconds": {
+            "description": "Lifetime of a synchronous reservation.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "minHoldPoints": {
+            "description": "Lowest reservation raised for a positive estimate.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "maxHoldShare": {
+            "type": "string",
+            "description": "Largest share of the wallet one reservation may freeze."
+          },
+          "admissionMode": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "strict_with_envelope",
+              "bounded_overdraft"
+            ]
+          },
+          "overdraftEnvelopePoints": {
+            "description": "Funding tolerated beyond the balance.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "creditLimitPoints": {
+            "description": "Credit line available to credit modes.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "allowancePeriod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "none",
+              null
+            ]
+          },
+          "allowanceQuota": {
+            "description": "Period allowance quota, when the mode uses one.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "allowanceResetMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "calendar",
+              "rolling",
+              null
+            ]
+          },
+          "overagePolicy": {
+            "type": "string",
+            "enum": [
+              "allow_receivable",
+              "fail",
+              "degrade"
+            ]
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "WalletBillingPolicyItemData": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalletBillingPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WalletBillingPolicyListResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "pageInfo"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletBillingPolicy"
+            }
+          },
+          "pageInfo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PageInfo"
+              }
+            ],
+            "description": "Page info field on the billing policy list response."
+          }
+        }
+      },
+      "UpsertWalletBillingPolicyRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scopeType",
+          "policyCode",
+          "name",
+          "chargeMode",
+          "settlementMode",
+          "prechargeRatio",
+          "outputTokenCeiling",
+          "holdTtlSeconds",
+          "maxHoldShare",
+          "admissionMode",
+          "overagePolicy"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopeType": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "scopeId": {
+            "type": "string",
+            "description": "Owner id of the scope; 0 for the platform default."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "default": 100
+          },
+          "policyCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "chargeMode": {
+            "type": "string",
+            "enum": [
+              "prepaid_balance",
+              "credit_line",
+              "postpaid_invoice",
+              "plan_allowance",
+              "free_trial",
+              "byok"
+            ]
+          },
+          "settlementMode": {
+            "type": "string",
+            "enum": [
+              "synchronous",
+              "asynchronous"
+            ]
+          },
+          "prechargeRatio": {
+            "type": "string",
+            "example": "1.0000"
+          },
+          "outputTokenCeiling": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "holdTtlSeconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minHoldPoints": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "maxHoldShare": {
+            "type": "string",
+            "example": "0.2500"
+          },
+          "admissionMode": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "strict_with_envelope",
+              "bounded_overdraft"
+            ]
+          },
+          "overdraftEnvelopePoints": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "creditLimitPoints": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "overagePolicy": {
+            "type": "string",
+            "enum": [
+              "allow_receivable",
+              "fail",
+              "degrade"
+            ]
+          },
+          "effectiveFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletBillingPolicyItemResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletBillingPolicyItemData"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Billing policy result schema exposed by the account service.",
+        "x-operation-id": "billingPolicy.resolve"
+      },
+      "WalletBillingPolicyMutationResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletBillingPolicyItemData"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Billing policy mutation result schema exposed by the account service.",
+        "x-operation-id": "billingPolicies.create"
+      },
+      "WalletBillingPolicyListResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletBillingPolicyListResponse"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Billing policy list result schema exposed by the account service.",
+        "x-operation-id": "billingPolicies.list"
+      },
+      "WalletBillingAdmission": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "holdPoints"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "admit",
+              "deferred",
+              "free",
+              "reject"
+            ]
+          },
+          "holdPoints": {
+            "description": "Amount the account side would freeze, in points.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "rejectCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "insufficient_balance",
+              "credit_limit_exceeded",
+              "allowance_exhausted",
+              "trial_exhausted",
+              null
+            ]
+          },
+          "policyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletBillingAdmissionData": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WalletBillingAdmission"
+              }
+            ]
+          }
+        }
+      },
+      "AuthorizeWalletBillingRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ownerUserId",
+          "estimatedPoints"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "apiKeyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "estimatedPoints": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Estimated charge for the hypothetical request, in token-bank points."
+          },
+          "walletOwnerType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "USER",
+              "ORGANIZATION",
+              null
+            ]
+          },
+          "walletOwnerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletBillingAdmissionResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletBillingAdmissionData"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Billing admission simulation result schema exposed by the account service.",
+        "x-operation-id": "billingPolicy.authorize"
+      },
+      "WalletAccountSummary": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "uuid",
+          "tenantId",
+          "ownerUserId",
+          "assetType",
+          "availableAmount",
+          "frozenAmount",
+          "pendingAmount",
+          "status",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "assetType": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "points",
+              "token_bank"
+            ]
+          },
+          "currencyCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "availableAmount": {
+            "type": "string"
+          },
+          "frozenAmount": {
+            "type": "string"
+          },
+          "pendingAmount": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "description": "Optimistic version of the account row.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          }
+        }
+      },
+      "WalletLedgerEntry": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "uuid",
+          "accountId",
+          "tenantId",
+          "ownerUserId",
+          "assetType",
+          "direction",
+          "amount",
+          "balanceBefore",
+          "balanceAfter",
+          "businessType",
+          "transactionNo",
+          "requestNo",
+          "idempotencyKey",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "assetType": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "points",
+              "token_bank"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "credit",
+              "debit"
+            ]
+          },
+          "amount": {
+            "type": "string"
+          },
+          "balanceBefore": {
+            "type": "string"
+          },
+          "balanceAfter": {
+            "type": "string"
+          },
+          "businessType": {
+            "type": "string"
+          },
+          "transactionNo": {
+            "type": "string"
+          },
+          "requestNo": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        }
+      },
+      "WalletPointsLot": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "uuid",
+          "accountId",
+          "grantedAmount",
+          "remainingAmount",
+          "sourceType",
+          "sourceId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "grantedAmount": {
+            "description": "Points granted by this lot.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "remainingAmount": {
+            "description": "Points still spendable in this lot.",
+            "format": "int64",
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "x-sdkwork-int64-string": true
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "WalletAccountListData": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletAccountSummary"
+            }
+          }
+        }
+      },
+      "WalletLedgerEntryListData": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "pageInfo"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletLedgerEntry"
+            }
+          },
+          "pageInfo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PageInfo"
+              }
+            ],
+            "description": "Page info field on the ledger list response."
+          }
+        }
+      },
+      "WalletPointsLotListData": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "pageInfo"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletPointsLot"
+            }
+          },
+          "pageInfo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PageInfo"
+              }
+            ],
+            "description": "Page info field on the points lot list response."
+          }
+        }
+      },
+      "WalletAccountListResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletAccountListData"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Wallet account list result schema exposed by the account service.",
+        "x-operation-id": "accounts.list"
+      },
+      "WalletLedgerEntryListResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletLedgerEntryListData"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Wallet ledger entry list result schema exposed by the account service.",
+        "x-operation-id": "ledgerEntries.list"
+      },
+      "WalletPointsLotListResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WalletPointsLotListData"
+                  }
+                ],
+                "description": "Data field on this result."
+              }
+            }
+          }
+        ],
+        "description": "Wallet points lot list result schema exposed by the account service.",
+        "x-operation-id": "points.lots.list"
       }
     },
     "securitySchemes": {

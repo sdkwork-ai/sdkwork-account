@@ -916,6 +916,88 @@ impl PostgresCommerceAccountStore {
         })
     }
 
+    /// Releases holds whose lifetime elapsed without a settlement, across every
+    /// tenant.
+    ///
+    /// The per-tenant sweep (`expire_expired_holds`) needs a tenant and an
+    /// organization, so nothing but an operator-triggered call ever ran it. An
+    /// abandoned request therefore left its reservation frozen until someone
+    /// happened to sweep that tenant — in the production incident two such holds
+    /// kept 44% of a wallet unavailable for the full TTL. This sweep is the
+    /// maintenance path: it walks expired holds globally in batches, locks each
+    /// batch with `SKIP LOCKED` so concurrent sweeps cannot collide, and returns
+    /// the frozen amount to the available balance.
+    ///
+    /// Releasing here does not forgive a charge: usage that was already recorded
+    /// is captured by the settlement path, which handles an expired hold through
+    /// its own capture suffix. This method only stops the funds being frozen.
+    pub async fn sweep_expired_holds(
+        &self,
+    ) -> Result<ExpireExpiredHoldsOutcome, CommerceServiceError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| store_error("failed to begin hold sweep transaction", error))?;
+        let now = Utc::now().to_rfc3339();
+        let mut expired_hold_count = 0_i64;
+        let mut released_amount_total = 0_i128;
+        loop {
+            let rows = sqlx::query(
+                r#"
+                SELECT hold.uuid, hold.tenant_id, hold.account_id, hold.amount
+                FROM acct_hold hold
+                WHERE hold.status = $1
+                  AND hold.expires_at IS NOT NULL
+                  AND hold.expires_at <= $2::timestamptz
+                ORDER BY hold.expires_at ASC, hold.id ASC
+                LIMIT $3
+                FOR UPDATE SKIP LOCKED
+                "#,
+            )
+            .bind(HOLD_STATUS_HELD)
+            .bind(&now)
+            .bind(crate::store::EXPIRE_SWEEP_BATCH_SIZE)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|error| store_error("failed to load expired holds for sweep", error))?;
+            if rows.is_empty() {
+                break;
+            }
+            let batch_len = rows.len();
+            for row in rows {
+                let hold_uuid = string_cell(&row, "uuid");
+                let tenant_id = integer_cell(&row, "tenant_id");
+                let account_id = integer_cell(&row, "account_id");
+                let amount = string_cell(&row, "amount");
+                expire_one_expired_hold_postgres(
+                    &mut tx,
+                    tenant_id,
+                    account_id,
+                    &hold_uuid,
+                    &amount,
+                    CommerceAccountAssetType::TokenBank,
+                    &now,
+                )
+                .await?;
+                expired_hold_count += 1;
+                released_amount_total += parse_amount_minor(&amount)?;
+            }
+            if batch_len < crate::store::EXPIRE_SWEEP_BATCH_SIZE as usize {
+                break;
+            }
+        }
+        tx.commit()
+            .await
+            .map_err(|error| store_error("failed to commit hold sweep transaction", error))?;
+        Ok(ExpireExpiredHoldsOutcome {
+            accepted: true,
+            replayed: false,
+            expired_hold_count,
+            released_amount_total: released_amount_total.to_string(),
+        })
+    }
+
     pub async fn expire_expired_holds(
         &self,
         command: ExpireExpiredHoldsCommand,
@@ -1222,6 +1304,25 @@ struct SettlementLedgerInput<'a> {
     tenant_id: i64,
 }
 
+/// Balance pair recorded on a settlement ledger row.
+///
+/// The caller captures the hold first and passes the post-settlement account:
+/// settlement returns the unused part of the hold to `available_amount` and
+/// keeps the captured amount debited, so the `amount` this row records is
+/// already out of `available_after`. Reconstruct the pre-row balance instead of
+/// repeating the post-settlement one in both columns, or the ledger claims the
+/// debit left the balance untouched.
+fn settlement_ledger_balances(
+    available_after: &str,
+    amount: i128,
+) -> Result<(String, String), CommerceServiceError> {
+    let after = parse_amount_minor(available_after)?;
+    let before = after
+        .checked_add(amount)
+        .ok_or_else(|| CommerceServiceError::storage("hold settlement ledger balance overflow"))?;
+    Ok((format_amount_minor(before), format_amount_minor(after)))
+}
+
 async fn append_settlement_ledger(
     tx: &mut Transaction<'_, Postgres>,
     input: SettlementLedgerInput<'_>,
@@ -1235,8 +1336,8 @@ async fn append_settlement_ledger(
         now,
         tenant_id,
     } = input;
-    let balance_before = account.available_amount.clone();
-    let balance_after = account.available_amount.clone();
+    let (balance_before, balance_after) =
+        settlement_ledger_balances(&account.available_amount, amount)?;
     let journal_id = next_entity_id()?;
     let journal_uuid = next_entity_uuid();
     let ledger_id = next_entity_id()?;
@@ -2141,5 +2242,24 @@ mod tests {
         assert!(
             PostgresCommerceAccountStore::validated_capture_amounts("1000000", Some("0")).is_err()
         );
+    }
+
+    /// Regression: a settlement row used to repeat the post-settlement balance in
+    /// both columns, so the wallet history claimed a debit changed nothing.
+    #[test]
+    fn settlement_ledger_records_the_balance_before_and_after_the_capture() {
+        assert_eq!(
+            ("41510361".to_owned(), "41459562".to_owned()),
+            settlement_ledger_balances("41459562", 50_799).unwrap()
+        );
+        assert_eq!(
+            ("100".to_owned(), "0".to_owned()),
+            settlement_ledger_balances("0", 100).unwrap()
+        );
+    }
+
+    #[test]
+    fn settlement_ledger_rejects_a_malformed_balance() {
+        assert!(settlement_ledger_balances("not-an-amount", 1).is_err());
     }
 }

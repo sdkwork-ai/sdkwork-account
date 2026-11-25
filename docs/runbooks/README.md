@@ -64,6 +64,23 @@ POST /backend/v3/api/wallet/points/reconciliation
 
 Scans points accounts in batches of 100. Review `mismatchCount` and `mismatches` in the response.
 
+## Ledger balance drill
+
+Before a release, after a funding incident, or whenever a wallet's frozen balance
+looks wrong, run [account-ledger-balance-drill.sql](account-ledger-balance-drill.sql)
+against a throwaway database that already has the baseline plus migrations applied.
+It walks admission -> precharge -> settlement -> abandoned hold -> sweep and prints
+checks `A0..A7`; every `verdict` must read `ok`.
+
+Interpretation:
+
+- all `ok` — the wallet, holds and ledger agree after one complete lifecycle;
+- any `mismatch` — stop and compare `acct_account`, `acct_hold` and
+  `acct_ledger_entry` for that account before touching production data.
+
+The account centre verification sequence (acceptance matrix, reconciliation queries
+and the Linux build-host commands) lives in
+[the acceptance plan](../engineering/plans/PLAN-2026-1125-account-centre-acceptance.md).
 ## Incident checklist
 
 1. Check readiness (`/readyz`) and wallet health.

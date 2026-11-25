@@ -377,3 +377,122 @@ fn optional_text(value: Option<&str>) -> Option<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
+
+/// Creates or supersedes the live policy for one (scope, priority) pair.
+///
+/// A policy is versioned rather than mutated: the writer closes the previous
+/// revision and inserts the next one, so an audit trail and a one-click rollback
+/// both follow from the rows themselves.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpsertBillingPolicyCommand {
+    pub tenant_id: String,
+    pub organization_id: Option<String>,
+    pub scope_type: i16,
+    pub scope_id: String,
+    pub priority: i32,
+    pub policy_code: String,
+    pub name: String,
+    pub params: crate::domain::BillingPolicyParams,
+    pub effective_from: Option<String>,
+    pub effective_to: Option<String>,
+    pub actor_user_id: Option<String>,
+}
+
+impl UpsertBillingPolicyCommand {
+    /// Validates the command before any row is touched.
+    pub fn validate(&self) -> Result<(), CommerceServiceError> {
+        crate::validation::require_non_empty("policy_code", &self.policy_code)?;
+        crate::validation::require_non_empty("name", &self.name)?;
+        if self.scope_type != crate::queries::BILLING_POLICY_SCOPE_PLATFORM
+            && self.scope_id.trim().is_empty()
+        {
+            return Err(CommerceServiceError::validation(
+                "scope_id is required for a non-platform scope",
+            ));
+        }
+        // The table enforces `effective_to > effective_from`; checking it here turns
+        // an inverted window into a validation error instead of a storage failure
+        // that the caller cannot interpret.
+        if let (Some(from), Some(to)) =
+            (self.effective_from.as_deref(), self.effective_to.as_deref())
+        {
+            if !from.trim().is_empty() && !to.trim().is_empty() && to <= from {
+                return Err(CommerceServiceError::validation(
+                    "effective_to must be later than effective_from",
+                ));
+            }
+        }
+        self.params.validate()
+    }
+}
+
+/// Enables or retires one stored policy revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SetBillingPolicyStatusCommand {
+    pub tenant_id: String,
+    pub policy_id: String,
+    pub status: i16,
+    pub actor_user_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn command(from: Option<&str>, to: Option<&str>) -> UpsertBillingPolicyCommand {
+        UpsertBillingPolicyCommand {
+            tenant_id: "100001".to_owned(),
+            organization_id: None,
+            scope_type: crate::queries::BILLING_POLICY_SCOPE_USER,
+            scope_id: "5001".to_owned(),
+            priority: 100,
+            policy_code: "user-policy".to_owned(),
+            name: "User policy".to_owned(),
+            params: crate::domain::BillingPolicyParams::default(),
+            effective_from: from.map(str::to_owned),
+            effective_to: to.map(str::to_owned),
+            actor_user_id: None,
+        }
+    }
+
+    #[test]
+    fn an_inverted_effective_window_is_a_validation_error() {
+        // The table would reject this too; failing here keeps the caller out of a
+        // storage error they cannot act on.
+        let error = command(Some("2026-12-01T00:00:00Z"), Some("2026-11-01T00:00:00Z"))
+            .validate()
+            .expect_err("an inverted window must be rejected");
+        assert!(
+            error.message().contains("effective_to"),
+            "unexpected message: {}",
+            error.message()
+        );
+    }
+
+    #[test]
+    fn an_equal_effective_window_is_rejected() {
+        assert!(
+            command(Some("2026-12-01T00:00:00Z"), Some("2026-12-01T00:00:00Z"))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_valid_or_open_effective_window_is_accepted() {
+        command(Some("2026-11-01T00:00:00Z"), Some("2026-12-01T00:00:00Z"))
+            .validate()
+            .expect("an ordered window is valid");
+        command(Some("2026-11-01T00:00:00Z"), None)
+            .validate()
+            .expect("an open-ended window is valid");
+        command(None, None).validate().expect("no window is valid");
+    }
+
+    #[test]
+    fn a_non_platform_scope_requires_a_scope_id() {
+        let mut blank = command(None, None);
+        blank.scope_id = "   ".to_owned();
+        assert!(blank.validate().is_err());
+    }
+}

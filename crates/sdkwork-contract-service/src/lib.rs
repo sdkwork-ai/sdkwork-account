@@ -1,3 +1,7 @@
+mod billing_policy;
+
+pub use billing_policy::*;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Environment {
     Development,

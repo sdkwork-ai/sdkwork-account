@@ -33,7 +33,7 @@ use sdkwork_account_service::AppendLedgerEntryCommand;
 use sdkwork_contract_service::{CommerceAccountAssetType, CommerceServiceError};
 use sdkwork_database_id::SnowflakeIdGenerator;
 use sdkwork_utils_rust::{parse_datetime, uuid as new_uuid};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 pub const LEDGER_APPEND_SCOPE: &str = "wallet.adjustments.create";
 pub const HOLD_CREATE_SCOPE: &str = "wallet.holds.create";
@@ -196,17 +196,30 @@ impl Default for AccountIdGenerator {
     }
 }
 
-thread_local! {
-    static ID_GENERATOR: Mutex<AccountIdGenerator> =
-        Mutex::new(AccountIdGenerator::new().expect("account id generator must initialize"));
+// One generator per process, not one per thread.
+//
+// A snowflake id is (timestamp, worker id, sequence). Two generators that share a
+// worker id but hold independent sequence counters emit the *same* id when they
+// tick inside the same millisecond, so a thread-local generator turns concurrent
+// inserts on a multi-threaded runtime into primary-key collisions. A single
+// process-wide generator keeps the sequence monotonic across every thread.
+static ID_GENERATOR: OnceLock<Mutex<AccountIdGenerator>> = OnceLock::new();
+
+fn id_generator() -> &'static Mutex<AccountIdGenerator> {
+    ID_GENERATOR.get_or_init(|| {
+        Mutex::new(AccountIdGenerator::new().expect("account id generator must initialize"))
+    })
 }
 
 pub fn next_entity_id() -> Result<i64, CommerceServiceError> {
-    ID_GENERATOR.with(|generator| generator.lock().expect("id generator lock").next_id())
+    id_generator().lock().expect("id generator lock").next_id()
 }
 
 pub fn next_entity_uuid() -> String {
-    ID_GENERATOR.with(|generator| generator.lock().expect("id generator lock").next_uuid())
+    id_generator()
+        .lock()
+        .expect("id generator lock")
+        .next_uuid()
 }
 
 fn resolve_snowflake_worker_id_from_env() -> u16 {

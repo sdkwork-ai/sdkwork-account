@@ -359,3 +359,150 @@ never touched: `sdkwork-api-cloudrouter-assembly/src/bootstrap.rs`,
 | `pnpm -w run test:vitest` | console packages (48 tests) | workspace install |
 | `pnpm typecheck` | console type safety | workspace install |
 | `publish-core --action check` | generated SDK contract | `rollup` (repo root devDependency) |
+
+### Round 30: every touched crate compiles
+
+Cloud Router crates verified under WSL after the fixes below:
+
+| Crate | Result |
+| --- | --- |
+| `sdkwork-cloudrouter-router-service` | check pass; `billing_precharge_estimate` 14 passed, `admin_billing_decision_api` 4 passed |
+| `sdkwork-routes-cloudrouter-backend-api` | check pass |
+| `sdkwork-cloudrouter-edge-runtime` | check pass |
+
+Account workspace: `cargo check --workspace` and `cargo test --workspace` pass (74 tests,
+Windows and WSL).
+
+### Compile defects found while getting there
+
+Seventeen errors that no earlier gate could see, all now fixed:
+
+| Defect | File |
+| --- | --- |
+| `paging.page_size` is not a field (it is `paging.params.page_size`) | `postgres_billing_policy.rs` |
+| `backend_billing_policy_router_with_postgres_pool` used without an import | `routes.rs` |
+| `error.to_string()` on `CommerceServiceError` (no `Display`) | `billing_policy_router.rs` |
+| Diagnostics port returned `CommerceServiceError` where the API layer needs `DomainError` | `admin_billing_decision_store.rs` |
+| `AdminRouterRuntime` destructuring omitted the new field | `routes.rs` |
+| Twelve `error.to_string()` calls on `CommerceServiceError` in the account store wrapper | `gateway_billing_account.rs` |
+| `tracing::warn!(%error)` on `CommerceServiceError` in the sweep worker | `runtime.rs` |
+
+All touched Rust files are `rustfmt`-clean under the Linux toolchain.
+
+### Dev host (api-dev.birdcoder.com) reconnaissance
+
+| Fact | Value |
+| --- | --- |
+| Login | `ssh api-dev.birdcoder.com` (user `sdkwork`, key `id_ed25519`) |
+| CPU / RAM | 36 cores / 62 GB |
+| Disk | 1.1 TB, **48 GB free (96% used)**; Docker images 113.7 GB with 88.9 GB reclaimable |
+| Toolchain | Docker 29.7.2, rustup stable (`~/.cargo/bin`, not on the non-interactive PATH), psql 18.6, no node/pnpm on PATH |
+| Running | gateway development + production, webserver development, cloudrouter development deps (postgres, redis) |
+| Repos | none checked out on the host |
+
+Deployment must therefore either build on the host (needs the 35 sibling repositories that
+the Cargo workspaces path-depend on, and roughly 15-25 GB of transient target space) or
+receive an image built elsewhere. Disk headroom is the binding constraint: pruning the
+88.9 GB of reclaimable images would be required before a full build, and that is a
+destructive action on the shared dev host that needs the owner's decision.
+
+### Round 31: deployment smoke on api-dev.birdcoder.com
+
+Verified end to end on the development host (no image pruning, no changes to the
+existing services):
+
+| Step | Result |
+| --- | --- |
+| Source closure for the account workspace resolved | 7 repositories (account, appbase, database, iam, id, utils, web-framework); 174 MB staged, 50.6 MB archived, 18 MB extracted |
+| `cargo build --release -p sdkwork-api-account-standalone-gateway` on the host (36 cores) | **pass, 1m55s**, target 655 MB |
+| Throwaway PostgreSQL (canonical identity `sdkwork_ai_dev`, schema of the same name) | running |
+| Baseline + `0002_acct_billing_policy` applied into `sdkwork_ai_dev` | 16 tables |
+| Service start | `GET /healthz` -> 200 `{"status":"ok"}`, `GET /readyz` -> 200 `{"status":"ready"}` |
+| Admin surface without credentials | 401 with `failedStage=request-context-resolution` and an explicit message that non-open-api requests need an Access-Token JWT |
+| Ledger drill against the **deployed** database | 11/11 checks `ok` (same numbers as the local run) |
+
+Configuration facts discovered while deploying (worth recording because they are
+fail-closed guards, not bugs):
+
+- The service refuses a database whose name is not a canonical SDKWork workspace identity (`sdkwork_ai_dev`, `_test`, `_staging`, `_prod`, `_demo`, or `sdkwork_ai_test_<suffix>`), and the database user must match the identity.
+- Tables live in a schema named after the database, so an operator applying the DDL must set `search_path` accordingly.
+- With the environment unset the service assembles in production posture and refuses to start without an `AuditEmitter`; `SDKWORK_ENVIRONMENT=development` selects the development posture.
+
+Remaining for a fully authenticated endpoint smoke: an Access-Token JWT issued by the
+development IAM service. Without it the admin routes correctly refuse with 401, which is
+itself the expected behaviour rather than a defect.
+
+### Round 32: live PostgreSQL repository suite, and a latent id-generator defect
+
+Added `crates/sdkwork-account-repository-sqlx/tests/postgres_billing_policy_live.rs`:
+four tests that run against a real database when `SDKWORK_ACCOUNT_TEST_DATABASE_URL` is
+set (and skip otherwise, so no CI job needs a database to stay green). Executed on the
+development host against the deployed `sdkwork_ai_dev` schema:
+
+| Test | What it proves |
+| --- | --- |
+| `a_stored_policy_is_resolved_with_its_validated_parameters` | upsert -> resolve round-trips the parameters through the real SQL |
+| `a_second_upsert_keeps_exactly_one_live_revision` | the supersede transaction leaves exactly one live row and resolution returns the newest revision |
+| `list_pages_do_not_repeat_their_first_row` | page two advances past page one (the `OFFSET` fix, proven on real PostgreSQL) |
+| `admission_freezes_by_estimate_and_caps_at_the_share_limit` | estimate 1,310,720 freezes 1,310,720; the oversized 20,971,520 estimate freezes 18,679,023 (25% share cap) instead of the whole wallet; neither call moves funds |
+
+Result: 4 passed.
+
+#### Defect found: thread-local snowflake generator
+
+The suite first failed with a **primary-key collision** on `acct_billing_policy`. The
+cause is in `crates/sdkwork-account-repository-sqlx/src/store/mod.rs`: the id generator was
+declared in `thread_local!`, so every thread built its own snowflake generator with the
+same `ACCOUNT_SNOWFLAKE_WORKER_ID`. A snowflake id is (timestamp, worker id, sequence), and
+two generators sharing a worker id but holding independent sequence counters emit the same
+id whenever they tick inside the same millisecond. On a multi-threaded runtime concurrent
+inserts therefore collide on the primary key.
+
+This is latent in production code, not a test artefact: it would surface as sporadic
+primary-key violations on `acct_hold`, `acct_ledger_entry` and `acct_billing_policy`
+under load, and single-threaded unit tests can never see it.
+
+Fixed by making the generator process-wide (`OnceLock<Mutex<AccountIdGenerator>>`), which
+keeps the sequence monotonic across threads. After the fix the suite passes.
+
+## 9. Completion criteria: requirement by requirement
+
+Final sweep (all executed in this workspace):
+
+| Check | Result |
+| --- | --- |
+| account `cargo test --workspace` | pass |
+| account repository live suite against a real PostgreSQL | 4 passed |
+| account 5 repository gates | pass |
+| account `typecheck` + `pnpm -w run test:vitest` | pass, 48 tests |
+| `pnpm run test:domain` (25 funding-rule tests) | pass |
+| `pnpm run test:ledger-drill` (A0..A8 + invariant re-check) | pass |
+| cloudrouter `cargo check` for router-service / routes / edge-runtime | pass |
+| cloudrouter `billing_precharge_estimate` + `admin_billing_decision_api` | 14 + 4 passed |
+| cloudrouter assembly + envelope gates, `typecheck`, billing package tests | pass / 5 passed |
+| release build + deploy smoke on api-dev (health, readiness, schema, drill) | pass |
+
+| Objective requirement | Evidence | Status |
+| --- | --- | --- |
+| `acct_billing_policy` funding rules | migration + CHECK clamps + live repository tests | done |
+| Admission decision `authorize` | 25 domain tests incl. 4,000-case invariant sweep; live SQL assertions | done |
+| Balance / frozen / ledger / allowance lots / credit surfaces | wallet read routes + console views + 48 console tests | done for balance, frozen, ledger, lots (read-only); **credit has no outstanding-credit ledger** |
+| backend-api contract | OpenAPI + generated SDK + envelope/pagination/assembly gates | done |
+| admin frontend package | six views, service layer, i18n, contribution records, typecheck + tests | **package done; no host app mounts it** |
+| cloudrouter reduced to estimator + executor | policy resolution, estimate with ceiling, admission, settlement; sim/decision diagnostics | done |
+| Decoupling through contract DTOs and ports | `sdkwork-contract-service` owns the vocabulary; repository implements the ports | done |
+| 393,216 cap does not freeze the wallet | unit test + router-service test `a_model_wide_output_cap_does_not_freeze_the_whole_wallet` + live SQL (18,679,023 share cap) | done |
+| Eight concurrent calls, no 402 | `eight_parallel_calls_fit_a_small_wallet_with_the_capped_estimate` | done |
+| Ledger balances (账平) | drill A0..A8 locally and on the deployed database; independent invariant re-check | done |
+| Aborted reservations release | sweep unit path + drill + error-path release; deployed sweep worker verified to shut down cleanly | done |
+| rustfmt / SDK contract / typecheck | rustfmt clean on every touched file (Linux toolchain); `publish-core check` and `build` pass; both repos typecheck | done |
+| Production build and release by the Linux host | release binary built on api-dev in 1m55s; deployment smoke passed | build verified; **release/publish remains the owner action** |
+
+### What is genuinely left, and why it needs a decision
+
+| Item | Why it cannot be finished unilaterally |
+| --- | --- |
+| No admin host mounts `ACCOUNTS_ADMIN_ROUTE_RECORDS` | The account application in this repository is the end-user wallet surface. Mounting admin routes there changes its purpose; the alternative is a platform admin app that does not exist in these two repositories. |
+| Allowance lots and trial credits are not a funding source | Needs the product rule: which lot funds which period, and what happens when it is exhausted. The design proposal is ready (single `acct_points_lot` source, expiry-first consumption, remainder to the balance governed by `overage_policy`, same transaction, request-scoped idempotency). |
+| Credit line has no outstanding-credit ledger | Enabling a credit limit without a ledger of what is already borrowed would let N concurrent requests each borrow the whole line; the current default of `0` fails closed. |
+| `rollup` is declared at the account repository root | The generated SDK build script imports it but no `package.json` declares it. The durable fix belongs to the shared SDK generator template, which affects every repository. |

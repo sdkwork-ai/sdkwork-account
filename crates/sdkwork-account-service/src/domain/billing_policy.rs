@@ -414,6 +414,61 @@ mod tests {
         );
     }
 
+    /// Plan allowance spends lot credits, not the wallet balance.
+    #[test]
+    fn plan_allowance_funds_requests_without_touching_the_balance() {
+        let params = BillingPolicyParams {
+            charge_mode: ChargeMode::PlanAllowance,
+            ..BillingPolicyParams::default()
+        };
+        let mut funded = capacity(0, 0);
+        funded.allowance_remaining_points = 5_000_000;
+        // Allowance credit is consumed at settlement, not frozen up front: there is
+        // no prepaid money to reserve, and the share cap is a share of the wallet.
+        // Admitting with a zero hold is therefore the correct answer, and the lot
+        // consumption happens when the usage is settled.
+        assert_eq!(
+            AdmissionDecision::Admit { hold_points: 0 },
+            authorize(&params, funded, 1_000_000),
+            "a funded allowance must admit without a wallet balance"
+        );
+
+        // Exhausted allowance with a strict overage policy is a distinct rejection,
+        // not a generic insufficient balance: the subject has money in the wallet,
+        // so "recharge" would be the wrong advice.
+        let strict = BillingPolicyParams {
+            charge_mode: ChargeMode::PlanAllowance,
+            overage_policy: OveragePolicy::Fail,
+            ..BillingPolicyParams::default()
+        };
+        assert_eq!(
+            AdmissionDecision::Reject {
+                code: AdmissionRejectCode::AllowanceExhausted,
+            },
+            authorize(&strict, capacity(1_000_000, 0), 1_000)
+        );
+
+        // The documented hand-off: an exhausted allowance lets the balance take over
+        // when the policy allows a receivable.
+        let handoff = BillingPolicyParams {
+            charge_mode: ChargeMode::PlanAllowance,
+            overage_policy: OveragePolicy::AllowReceivable,
+            ..BillingPolicyParams::default()
+        };
+        assert!(matches!(
+            authorize(&handoff, capacity(1_000_000, 0), 1_000),
+            AdmissionDecision::Admit { .. }
+        ));
+
+        // A funded allowance is not a licence to freeze the whole wallet: the share
+        // cap still bounds the reservation, and the balance is not the funding source.
+        let mut huge = capacity(0, 0);
+        huge.allowance_remaining_points = 100_000_000;
+        assert!(matches!(
+            authorize(&params, huge, 50_000_000),
+            AdmissionDecision::Admit { hold_points } if hold_points <= 25_000_000
+        ));
+    }
     #[test]
     fn trial_and_byok_modes_need_no_reservation() {
         let trial = BillingPolicyParams {

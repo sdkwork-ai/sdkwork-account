@@ -8,6 +8,7 @@ pub mod store;
 pub use postgres_account::PostgresCommerceAccountStore;
 pub use postgres_billing::PostgresCommerceBillingHistoryStore;
 pub use postgres_billing_policy::PostgresBillingPolicyStore;
+pub use postgres_hold::{take_allowance_lots, AllowanceConsumption};
 
 use sdkwork_contract_service::{CommerceRequestHash, CommerceServiceError};
 use sdkwork_utils_rust::sha256_hash;

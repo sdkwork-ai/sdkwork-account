@@ -23,6 +23,8 @@ export interface SdkworkAccountsAdminRouteRecord {
   path: string;
   /** Machine key into this package's message bundle (`routes.<screen>.title`). */
   titleKey: string;
+  /** Screen key the host maps to a view element. */
+  screen: string;
   /** Permission the host must verify before rendering the route. */
   requiredPermission: string;
   /** Admin package that provides the view. */
@@ -41,6 +43,7 @@ export const ACCOUNTS_ADMIN_ROUTE_RECORDS: readonly SdkworkAccountsAdminRouteRec
   sdkworkAccountPcAdminAccountsRoutes.map((route) => ({
     path: route.path,
     titleKey: route.titleKey,
+    screen: route.screen,
     requiredPermission:
       route.screen === "policy" ? ACCOUNTS_ADMIN_MANAGE_PERMISSION : ACCOUNTS_ADMIN_READ_PERMISSION,
     adminPackage: "@sdkwork/account-pc-admin-accounts",

@@ -406,12 +406,8 @@ impl PostgresCommerceAccountStore {
         let hold_organization_id = org_id_from_option(hold.organization_id.as_deref())?;
         let (hold_amount, settled_amount) =
             Self::validated_capture_amounts(&hold.amount, command.settled_amount.as_deref())?;
-        let account = load_account_by_internal_id(
-            &mut tx,
-            tenant_id,
-            parse_subject_i64("account_id", &hold.account_id)?,
-        )
-        .await?;
+        let account_id = parse_subject_i64("account_id", &hold.account_id)?;
+        let account = load_account_by_internal_id(&mut tx, tenant_id, account_id).await?;
         if account.organization_id != hold_organization_id {
             return Err(CommerceServiceError::not_found(
                 "account hold organization scope does not match the account",
@@ -427,8 +423,19 @@ impl PostgresCommerceAccountStore {
         // less than the full hold must return the difference in the same
         // transaction as the ledger debit, otherwise a crash between "release"
         // and "capture" would lose the charge (or double-charge on retry).
+        // Allowance credit pays first. The ledger then records only the wallet part,
+        // so `amount == balance_before - balance_after` keeps holding for every
+        // settlement row; the credit portion lives in acct_points_lot_allocation
+        // against this same ledger entry.
+        let settled_points = i64::try_from(settled_amount).map_err(|_| {
+            CommerceServiceError::invalid_state("settled amount does not fit a point amount")
+        })?;
+        let planned =
+            plan_allowance_consumption(&mut tx, tenant_id, account_id, settled_points).await?;
+        let covered: i128 = planned.iter().map(|item| i128::from(item.amount)).sum();
+        let wallet_spent = settled_amount - covered;
         let available = parse_amount_minor(&account.available_amount)?;
-        let returned = hold_amount - settled_amount;
+        let returned = hold_amount - wallet_spent;
         let next_available = available.checked_add(returned).ok_or_else(|| {
             CommerceServiceError::storage("hold settle available balance overflow")
         })?;
@@ -446,7 +453,7 @@ impl PostgresCommerceAccountStore {
             &mut tx,
             SettlementLedgerInput {
                 account: &account,
-                amount: settled_amount,
+                amount: wallet_spent,
                 asset_type,
                 command: &command,
                 hold_id: parse_subject_i64("hold_id", &hold.id)?,
@@ -455,6 +462,11 @@ impl PostgresCommerceAccountStore {
             },
         )
         .await?;
+        if !planned.is_empty() {
+            let ledger_id = parse_subject_i64("ledger_id", &ledger_entry.id)?;
+            apply_allowance_consumption(&mut tx, tenant_id, account_id, ledger_id, &planned)
+                .await?;
+        }
 
         sqlx::query(
             r#"
@@ -1312,6 +1324,135 @@ struct SettlementLedgerInput<'a> {
 /// already out of `available_after`. Reconstruct the pre-row balance instead of
 /// repeating the post-settlement one in both columns, or the ledger claims the
 /// debit left the balance untouched.
+
+/// One lot consumed by a charge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AllowanceConsumption {
+    pub lot_id: i64,
+    pub amount: i64,
+}
+
+/// Consumes plan allowance and trial credits for one charge, expiry first.
+///
+/// Lots are taken in `expires_at` order (lifetime lots last, then by id) so a
+/// subject never burns a credit that would have outlived the one still available.
+/// Expired lots and lots of zero balance are skipped: they cannot pay for anything.
+/// The caller passes the ledger row the consumption belongs to, which keeps
+/// `acct_points_lot_allocation` auditable per charge and its unique
+/// (tenant, ledger, lot) constraint a natural double-allocation guard.
+///
+/// Returns the lots actually consumed; an empty result means the charge is not
+/// funded by allowance credit at all.
+pub async fn take_allowance_lots(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: i64,
+    account_id: i64,
+    ledger_id: i64,
+    amount: i64,
+) -> Result<Vec<AllowanceConsumption>, CommerceServiceError> {
+    let plan = plan_allowance_consumption(tx, tenant_id, account_id, amount).await?;
+    apply_allowance_consumption(tx, tenant_id, account_id, ledger_id, &plan).await?;
+    Ok(plan)
+}
+
+/// Decides which lots would pay for a charge, without writing anything.
+///
+/// The rows are locked (\`FOR UPDATE\`) in `expires_at ASC NULLS LAST, id ASC` order,
+/// so the decision cannot change under a concurrent settlement of the same subject.
+/// Planning is separate from applying because the allocation rows must reference the
+/// ledger entry, and the ledger amount depends on how much the lots cover.
+async fn plan_allowance_consumption(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: i64,
+    account_id: i64,
+    amount: i64,
+) -> Result<Vec<AllowanceConsumption>, CommerceServiceError> {
+    if amount <= 0 {
+        return Ok(Vec::new());
+    }
+    let lots = sqlx::query(
+        r#"
+        SELECT id, remaining_amount
+        FROM acct_points_lot
+        WHERE tenant_id = $1
+          AND account_id = $2
+          AND status = 1
+          AND remaining_amount > 0
+          AND (expires_at IS NULL OR expires_at > now())
+        ORDER BY expires_at ASC NULLS LAST, id ASC
+        FOR UPDATE
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(account_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|error| store_error("failed to load allowance lots for consumption", error))?;
+
+    let mut remaining = amount;
+    let mut planned = Vec::new();
+    for lot in lots {
+        if remaining == 0 {
+            break;
+        }
+        let lot_id: i64 = lot
+            .try_get("id")
+            .map_err(|error| store_error("allowance lot id", error))?;
+        let available: i64 = lot
+            .try_get("remaining_amount")
+            .map_err(|error| store_error("allowance lot remaining", error))?;
+        if available <= 0 {
+            continue;
+        }
+        let take = available.min(remaining);
+        planned.push(AllowanceConsumption {
+            lot_id,
+            amount: take,
+        });
+        remaining -= take;
+    }
+    Ok(planned)
+}
+
+/// Applies a planned consumption: decrements each lot and records its allocation.
+async fn apply_allowance_consumption(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: i64,
+    account_id: i64,
+    ledger_id: i64,
+    plan: &[AllowanceConsumption],
+) -> Result<(), CommerceServiceError> {
+    for consumption in plan {
+        sqlx::query(
+            "UPDATE acct_points_lot
+                SET remaining_amount = remaining_amount - $1, updated_at = now()
+              WHERE tenant_id = $2 AND id = $3 AND remaining_amount >= $1",
+        )
+        .bind(consumption.amount)
+        .bind(tenant_id)
+        .bind(consumption.lot_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| store_error("failed to consume an allowance lot", error))?;
+        sqlx::query(
+            "INSERT INTO acct_points_lot_allocation
+                 (id, uuid, tenant_id, account_id, ledger_id, lot_id, amount, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, now())",
+        )
+        .bind(next_entity_id()?)
+        .bind(next_entity_uuid())
+        .bind(tenant_id)
+        .bind(account_id)
+        .bind(ledger_id)
+        .bind(consumption.lot_id)
+        .bind(consumption.amount)
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| store_error("failed to record an allowance allocation", error))?;
+    }
+    Ok(())
+}
+
 fn settlement_ledger_balances(
     available_after: &str,
     amount: i128,

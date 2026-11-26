@@ -354,6 +354,49 @@ async fn fetch_policy_by_id(
     row.as_ref().map(billing_policy_row).transpose()
 }
 
+/// Remaining plan allowance and trial credits for one wallet, in points.
+///
+/// Only live lots with a positive balance count, and an expired lot contributes
+/// nothing: admitting against credits the subject can no longer spend is exactly the
+/// silent overdraft this repository refuses. Trial credits are separated by
+/// `source_type` so a trial decision can waive the charge instead of spending the
+/// balance.
+async fn allowance_snapshot(
+    pool: &PgPool,
+    tenant_id: i64,
+    account_id: i64,
+) -> Result<(i64, i64), CommerceServiceError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            CAST(COALESCE(SUM(CASE WHEN source_type <> $3 THEN remaining_amount ELSE 0 END), 0) AS BIGINT) AS allowance_remaining,
+            CAST(COALESCE(SUM(CASE WHEN source_type = $3 THEN remaining_amount ELSE 0 END), 0) AS BIGINT) AS trial_remaining
+        FROM acct_points_lot
+        WHERE tenant_id = $1
+          AND account_id = $2
+          AND status = 1
+          AND remaining_amount > 0
+          AND (expires_at IS NULL OR expires_at > now())
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(account_id)
+    .bind(sdkwork_account_service::POINTS_LOT_SOURCE_TRIAL)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| store_error("failed to read the allowance snapshot", error))?;
+
+    let allowance = row
+        .try_get::<i64, _>("allowance_remaining")
+        .map_err(|error| store_error("allowance remaining", error))?
+        .max(0);
+    let trial = row
+        .try_get::<i64, _>("trial_remaining")
+        .map_err(|error| store_error("trial remaining", error))?
+        .max(0);
+    Ok((allowance, trial))
+}
+
 fn billing_policy_row(
     row: &sqlx::postgres::PgRow,
 ) -> Result<BillingPolicyItem, CommerceServiceError> {
@@ -475,7 +518,7 @@ impl PostgresBillingPolicyStore {
         };
         let wallet = sqlx::query(
             r#"
-            SELECT available_amount, frozen_amount
+            SELECT id, available_amount, frozen_amount
             FROM acct_account
             WHERE tenant_id = $1 AND organization_id = $2 AND owner_type = $3
               AND owner_id = $4 AND asset_code = 'token_bank'
@@ -490,13 +533,24 @@ impl PostgresBillingPolicyStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(|error| store_error("failed to read the wallet snapshot", error))?;
-        let (available_points, frozen_points) = match wallet {
+        let (account_id, available_points, frozen_points) = match wallet {
             Some(row) => (
+                Some(
+                    row.try_get::<i64, _>("id")
+                        .map_err(|error| store_error("wallet account id", error))?,
+                ),
                 row.try_get::<i64, _>("available_amount")
                     .map_err(|error| store_error("wallet available amount", error))?,
                 row.try_get::<i64, _>("frozen_amount")
                     .map_err(|error| store_error("wallet frozen amount", error))?,
             ),
+            None => (None, 0, 0),
+        };
+        // Plan allowance and trial credits come from the lot ledger. Both stay zero
+        // when the wallet has no lots, so those charge modes keep failing closed
+        // instead of admitting against credits that do not exist.
+        let (allowance_remaining_points, trial_remaining_points) = match account_id {
+            Some(account_id) => allowance_snapshot(&self.pool, tenant_id, account_id).await?,
             None => (0, 0),
         };
         let capacity = AccountCapacity {
@@ -509,10 +563,8 @@ impl PostgresBillingPolicyStore {
             // outstanding-credit source exists; wiring a limit without it would
             // let N concurrent requests each borrow the whole line.
             credit_remaining_points: params.credit_limit_points,
-            // No allowance lot or trial pool is a funding source yet: both stay
-            // zero so those modes fail closed instead of admitting unbacked money.
-            allowance_remaining_points: 0,
-            trial_remaining_points: 0,
+            allowance_remaining_points,
+            trial_remaining_points,
         };
         let decision = authorize(&params, capacity, query.estimated_points);
         let hold_points = match decision {

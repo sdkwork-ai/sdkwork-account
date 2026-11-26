@@ -449,6 +449,13 @@ fn optional_text(value: Option<&str>) -> Option<String> {
 // Billing policy (account centre)
 // ---------------------------------------------------------------------------
 
+/// Points-lot source that marks trial credits rather than a plan grant.
+///
+/// Trial credits are not wallet money: they are admitted without a reservation and
+/// settlement waives the charge, so the admission snapshot keeps them separate from
+/// plan allowance money.
+pub const POINTS_LOT_SOURCE_TRIAL: &str = "trial";
+
 /// Resolution scope values persisted on a policy row.
 pub const BILLING_POLICY_SCOPE_PLATFORM: i16 = 0;
 pub const BILLING_POLICY_SCOPE_TENANT: i16 = 1;

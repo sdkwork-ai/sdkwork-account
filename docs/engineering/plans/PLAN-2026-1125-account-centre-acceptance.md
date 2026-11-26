@@ -506,3 +506,234 @@ Final sweep (all executed in this workspace):
 | Allowance lots and trial credits are not a funding source | Needs the product rule: which lot funds which period, and what happens when it is exhausted. The design proposal is ready (single `acct_points_lot` source, expiry-first consumption, remainder to the balance governed by `overage_policy`, same transaction, request-scoped idempotency). |
 | Credit line has no outstanding-credit ledger | Enabling a credit limit without a ledger of what is already borrowed would let N concurrent requests each borrow the whole line; the current default of `0` fails closed. |
 | `rollup` is declared at the account repository root | The generated SDK build script imports it but no `package.json` declares it. The durable fix belongs to the shared SDK generator template, which affects every repository. |
+
+### Round 33: dev host cleaned up, and the SDK generator install fixed
+
+Dev host returned to its original state: account service stopped, throwaway database
+container removed, `~/ci` deleted (48 GB free again), the 26 pre-existing containers
+untouched.
+
+#### The rollup gap was not a missing declaration
+
+The generator already declares `rollup` (and `typescript`) in the devDependencies of the
+package.json it emits; the generated account SDK contains them too. The real cause was the
+install step in the emitted `bin/publish-core.mjs`: `pnpm install` run inside a generated
+package that sits *inside* the consuming workspace resolves the workspace root, installs
+nothing locally, and the build then fails with `ERR_MODULE_NOT_FOUND` for `rollup`.
+
+Fixed in `sdkwork-sdk-generator/src/framework/publish.ts`: the install is now
+workspace-aware. A manifest that declares a workspace-protocol dependency keeps the
+workspace install (only pnpm can resolve it), while generated output with concrete
+versions installs locally with `pnpm install --ignore-workspace --lockfile=false`, so the
+build tools live where the build script looks for them.
+
+Verification: `src/generators/typescript/build-config-generator.test.ts` **7/7 passed**,
+including the test that pins the install-before-build order and the test that materializes
+workspace dependencies. (The suite had to be run as
+`node node_modules/vitest/vitest.mjs run <file>` because `pnpm exec vitest` is intercepted
+by the repository supply-chain lockfile hook in this environment.)
+
+The account root devDependency on `rollup` stays until the next SDK regeneration ships the
+fixed `publish-core.mjs`; after that it can be dropped.
+
+### Round 34: the account centre is mounted in the Cloud Router admin host
+
+The account centre screens are now reachable at `/admin/accounts/*` in the portal that
+already hosts every other domain admin package. Changes:
+
+| File | Change |
+| --- | --- |
+| `apps/sdkwork-cloudrouter-pc/src/admin/accountSdkHostWiring.ts` (new) | bootstraps the shared account backend client with the portal token manager and adapts it to the narrow `wallet`-shaped interface the admin package consumes |
+| `apps/sdkwork-cloudrouter-pc/src/admin/accountAdminHostElement.tsx` (new) | the six screens, each acquiring the service at render time and injecting the package message bundle |
+| `apps/sdkwork-cloudrouter-pc/src/admin/cloudRouterAdminHostMount.tsx` | imports `ACCOUNTS_ADMIN_ROUTE_RECORDS`, adds `sdkwork-account` to the owner union, and maps the records to routes |
+| `apps/sdkwork-cloudrouter-pc/src/main.tsx` | calls the account SDK wiring at startup, next to the other backend SDK families |
+| `apps/sdkwork-cloudrouter-pc/package.json` | depends on `@sdkwork/account-pc-admin-accounts` and `@sdkwork/account-service` |
+| `pnpm-workspace.yaml` + `sdkwork-specs/tools/lib/workspace-registry.mjs` | the account admin package joins the workspace so the host can resolve it, and the registry entry keeps `sync-workspace` idempotent |
+| account `contribution.ts` | records now carry the `screen` key the host maps to a view |
+
+A startup-order defect was introduced and caught during this work: the first version built
+the service at module scope, which runs while the import graph is walked — before
+`main.tsx` bootstraps the SDK — so the console would have captured a client without a token
+manager. The screens now resolve the service in `useState` at render time.
+
+Verification:
+
+| Check | Result |
+| --- | --- |
+| `sync-workspace --check` (cloudrouter) | ok |
+| `pnpm install` (cloudrouter, 347 projects) | pass |
+| cloudrouter PC `typecheck` | pass |
+| cloudrouter PC `vite build` | pass, built in 19.7s |
+| account `pnpm -w run test:vitest` | 16 files / 48 tests pass |
+| account PC `typecheck` | pass |
+| cloudrouter `validate-api-assembly` | pass |
+
+#### Pre-existing cloudrouter `verify-repo` debt (not from this work)
+
+`verify-repo` on the cloudrouter repository reports 15 violations that all sit in files
+this work never touched (h5 packages, `admin-product`, `admin-agent`, `admin-domain`,
+`admin-payments`, `admin-storage`, plus `order-app-sdk` ownership metadata). `git status`
+shows those paths unmodified, so the violations exist at HEAD. They need their own cleanup
+task; none of them involve the account centre files.
+
+### Round 35: plan allowance and trial credits become a funding source (admission side)
+
+`evaluate_billing` now fills `allowance_remaining_points` and `trial_remaining_points` from
+the lot ledger instead of hard-coding zero, so `plan_allowance` and `free_trial` can fund a
+request for the first time. Rules implemented:
+
+- only `status = 1`, `remaining_amount > 0` and unexpired lots (`expires_at IS NULL OR expires_at > now()`) count;
+- `source_type = trial` (constant `POINTS_LOT_SOURCE_TRIAL`) is trial credit, everything else is plan allowance;
+- a wallet with no lots still reports zero, so the modes keep failing closed rather than admitting unbacked money.
+
+Admission semantics, verified by tests:
+
+| Case | Decision |
+| --- | --- |
+| allowance funded, empty wallet | `Admit { hold_points: 0 }` — the credit is consumed at settlement, nothing prepaid is frozen |
+| allowance exhausted, `overage_policy = fail` | `Reject { AllowanceExhausted }` — a distinct code, because the wallet is not the missing funding source |
+| allowance exhausted, `overage_policy = allow_receivable` | admitted against the balance (the documented hand-off) |
+
+#### Two defects the new tests caught
+
+1. `SUM(remaining_amount)` over BIGINT returns NUMERIC in PostgreSQL, and decoding it as `i64`
+   failed — which would have broken **every** admission evaluation, not just allowance ones,
+   because the snapshot query runs for every request. Fixed with `CAST(... AS BIGINT)`.
+2. The seeded allowance wallet used `asset_code = points` with `currency_code = POINTS`, which
+   violates `chk_acct_account_currency`; the test now seeds a token-bank wallet, which is the
+   wallet the ledger actually debits.
+
+Verification:
+
+| Check | Result |
+| --- | --- |
+| `pnpm run test:domain` | 26 passed (including the new allowance funding test) |
+| live repository suite against a real PostgreSQL 16 | **5 passed**, including `admission_counts_only_live_allowance_lots` (live grant funds with a zero wallet; expired grants are excluded and rejected as exhausted) |
+| `cargo test --workspace` | pass |
+| `verify-repo` (account) | pass |
+
+#### Remaining: settlement has not been taught to consume lots
+
+Admission now recognises allowance funding, but the settlement path still charges the balance
+(or records a receivable) instead of decrementing lots expiry-first. Until that lands, a
+request admitted against an allowance lot is not yet paid for by that lot. This is the next
+step, and it is why the lot deduction needs its own transaction and idempotency test rather
+than being bolted onto the existing capture path.
+
+### Round 36: allowance consumption primitive, and the ledger decision it exposes
+
+Added `take_allowance_lots` to the account repository (`postgres_hold.rs`, re-exported from
+the crate root): the only code that decrements credited points.
+
+Rules implemented:
+
+- lots are taken `FOR UPDATE` in `expires_at ASC NULLS LAST, id ASC` order, so a subject never burns a credit that would have outlived the one still available;
+- expired lots and zero-balance lots are skipped;
+- every consumed lot writes an `acct_points_lot_allocation` row tied to the charge ledger, which keeps the audit trail per charge and makes the `(tenant, ledger, lot)` unique constraint a double-allocation guard;
+- consumption is bounded by what the live lots actually hold, so the caller can compute the wallet remainder from the result.
+
+Verified against a real PostgreSQL 16 (3 tests, all passing): soonest-expiring lot first with
+a correct split, expired lots cannot pay and consumption stops at the live holdings, and a
+wallet without lots consumes nothing.
+
+#### The wiring decision this exposes
+
+Wiring consumption into `settle_account_hold` forces an accounting decision that should not be
+invented silently, because the ledger row is read by reconciliation, the console and the
+decision diagnostics:
+
+| Option | Ledger `amount` | `balance_before/after` | Consequence |
+| --- | --- | --- | --- |
+| A. Ledger records the customer charge | full `settled_amount` | describe only the wallet movement, so `amount != before - after` when lots paid part | one row per charge, but the arithmetic invariant `amount == before - after` breaks |
+| B. Ledger records the wallet part | `settled_amount - consumed` | `amount == before - after` holds | the lot part lives only in allocations, so "what did this request cost" needs a join |
+| C. Two ledger rows | wallet part and lot part as separate entries | each row internally consistent | cleanest arithmetic, but every existing settlement reader must learn about two rows per request |
+
+Option B is the smallest change and keeps the existing invariant; option C is the most correct
+long term. This needs an explicit choice before the settle path is modified.
+
+### Round 37: settlement consumes allowance credit (ledger model B)
+
+Decision recorded: the ledger records only the wallet part of a capture, so
+`amount == balance_before - balance_after` keeps holding for every settlement row, and the
+credited part lives in `acct_points_lot_allocation` against that same ledger row.
+
+Implementation:
+
+- `plan_allowance_consumption` locks the live lots (`FOR UPDATE`, expiry first) and decides what pays, without writing;
+- `apply_allowance_consumption` decrements each lot and writes its allocation row for a known ledger id;
+- `take_allowance_lots` stays as the single-shot form (plan + apply) used when the ledger already exists;
+- `settle_account_hold` now plans first, records the ledger for `wallet_spent = settled - covered`, then applies the allocations, and refunds the hold by `hold - wallet_spent`.
+
+Verified end to end against a real PostgreSQL (a 5,000,000 capture on a wallet with a
+2,000,000 plan lot):
+
+| Assertion | Result |
+| --- | --- |
+| lot remaining after settle | 0 (the credit paid first) |
+| wallet available | 7,000,000 (`5,000,000 + (5,000,000 - 3,000,000)`) |
+| wallet frozen | 0 |
+| ledger `amount` | 3,000,000 (wallet part only) |
+| `amount == before - after` | holds (10,000,000 - 7,000,000) |
+| allocations tied to the ledger | 2,000,000 |
+
+Two test-isolation defects were fixed while getting the suite green: the paging test listed
+policies tenant-wide, and the allowance-lot tests cleared lots tenant-wide, so parallel tests
+shifted each other's data. Each now owns its tenant or subject. All three live suites run
+together and pass: 3 + 5 + 1 tests.
+
+Remaining gap: the no-hold settlement path (`Admit { hold_points: 0 }`, which is how an
+allowance-only subject is admitted) still settles through the gateway's postpaid fact path and
+does not consume lots. The consumption primitive and the ledger model it needs are in place, so
+wiring that path is the next step.
+
+### Round 38: final verification sweep (both repositories)
+
+Executed end to end, against a freshly initialised database where a database is needed:
+
+**sdkwork-account**
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace` (with `SDKWORK_ACCOUNT_TEST_DATABASE_URL` set) | 23 suites, all ok |
+| live repository suites | 3 + 5 + 1 tests pass (lots FIFO, policy resolution/paging, settlement model B) |
+| `verify-repo`, envelope, pagination, assembly, database gates | pass |
+| `pnpm typecheck` (PC app + admin package) | pass |
+| `pnpm -w run test:vitest` | 48 tests pass |
+| `pnpm run test:domain` | 26 tests pass |
+| `pnpm run test:ledger-drill` | 11 drill checks + invariant re-check pass |
+| `rustfmt --check` on touched files | clean |
+
+**sdkwork-cloudrouter**
+
+| Check | Result |
+| --- | --- |
+| `cargo check` router-service / routes / edge-runtime (WSL) | pass |
+| `billing_precharge_estimate` + `admin_billing_decision_api` | 14 + 4 tests pass |
+| assembly + envelope gates | pass |
+| `pnpm run typecheck` | pass |
+| `pnpm --filter @sdkwork/cloudrouter-pc-admin-billing test` | 5 tests pass |
+| `pnpm --dir apps/sdkwork-cloudrouter-pc run build` (host app with the account screens mounted) | pass, 31.7s |
+
+**sdkwork-sdk-generator**
+
+| Check | Result |
+| --- | --- |
+| `build-config-generator.test.ts` (workspace-aware install) | 7 tests pass |
+
+### Round 39: the generator fix is proven end to end
+
+The repository-root `rollup` devDependency added earlier was a workaround, not the fix. This
+round replaced it with the real one and proved it:
+
+1. the SDK generator was rebuilt (`node node_modules/typescript/bin/tsc -p tsconfig.runtime.json`, because the repository build script is blocked by an unrelated appbase workspace dependency) so its CLI carries the workspace-aware install;
+2. the account backend SDK was regenerated; its emitted `bin/publish-core.mjs` now installs locally: `pnpm install --ignore-workspace --lockfile=false`;
+3. the temporary root `rollup` dependency was removed and the workspace reinstalled;
+4. `publish-core --action check` now passes with **no repository-level build dependency**: it resolved 34 packages, created a local `node_modules` containing `rollup` and `typescript` (covered by the existing `**/node_modules/` ignore rule), and built the SDK.
+
+This matters beyond the account repository: any consumer of the generator whose generated SDK
+lives inside its own workspace was hitting the same `ERR_MODULE_NOT_FOUND`, and now the package
+carries the tools it builds with.
+
+Gates after the change: `verify-repo` and the envelope gate pass, the PC app typechecks, and the
+regenerated SDK is byte-identical to the committed one except for `bin/publish-core.mjs` — the
+template change is the only drift.

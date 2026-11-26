@@ -33,6 +33,7 @@ packages:
   - "../sdkwork-ui/sdkwork-ui-pc-react"
   - "../sdkwork-sdk-commons/sdkwork-sdk-common-typescript"
   - "../sdkwork-utils/packages/sdkwork-utils-typescript"
+  - "../sdkwork-account/apps/sdkwork-account-pc/packages/sdkwork-account-pc-admin-accounts"
 
 catalog:
   "@tailwindcss/vite": ^4.3.3

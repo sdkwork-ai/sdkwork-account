@@ -25,8 +25,8 @@ use sdkwork_account_service::{
     BillingPolicyListQuery, BillingPolicyResolveQuery, UpsertBillingPolicyCommand,
 };
 use sdkwork_contract_service::{
-    AdmissionDecision, BillingAuthorizationQuery, BillingPolicyParams, ChargeMode, OveragePolicy,
-    SettlementMode,
+    AdmissionDecision, AdmissionRejectCode, BillingAuthorizationQuery, BillingPolicyParams,
+    ChargeMode, OveragePolicy, SettlementMode,
 };
 
 const TENANT_ID: i64 = 100_001;
@@ -36,6 +36,11 @@ const SUBJECT_OWNERSHIP: i64 = 500_001;
 const SUBJECT_REVISIONS: i64 = 500_002;
 const SUBJECT_PAGING: i64 = 500_003;
 const SUBJECT_ADMISSION: i64 = 500_004;
+const SUBJECT_ALLOWANCE: i64 = 500_005;
+
+/// The paging test lists every policy of its tenant, so it owns a tenant of its own;
+/// sharing one with the other tests would let their inserts shift the pages.
+const TENANT_PAGING: i64 = 100_004;
 
 async fn connect() -> Option<PgPool> {
     let url = std::env::var("SDKWORK_ACCOUNT_TEST_DATABASE_URL").ok()?;
@@ -46,12 +51,21 @@ async fn connect() -> Option<PgPool> {
 }
 
 /// Clears only the rows a single test owns.
-async fn reset_subject(pool: &PgPool, owner_id: i64) {
+async fn reset_subject_for(pool: &PgPool, tenant_id: i64, owner_id: i64) {
+    sqlx::query(
+        "DELETE FROM acct_points_lot WHERE tenant_id = $1 AND account_id IN
+             (SELECT id FROM acct_account WHERE tenant_id = $1 AND owner_id = $2)",
+    )
+    .bind(tenant_id)
+    .bind(owner_id)
+    .execute(pool)
+    .await
+    .expect("clear allowance lots");
     sqlx::query(
         "DELETE FROM acct_billing_policy
           WHERE tenant_id = $1 AND scope_type = 3 AND scope_id = $2",
     )
-    .bind(TENANT_ID)
+    .bind(tenant_id)
     .bind(owner_id)
     .execute(pool)
     .await
@@ -76,9 +90,13 @@ fn user_policy(ratio_bps: u32, ceiling: i64) -> BillingPolicyParams {
     }
 }
 
-fn upsert_command(scope_id: i64, params: BillingPolicyParams) -> UpsertBillingPolicyCommand {
+fn upsert_command_for(
+    tenant_id: i64,
+    scope_id: i64,
+    params: BillingPolicyParams,
+) -> UpsertBillingPolicyCommand {
     UpsertBillingPolicyCommand {
-        tenant_id: TENANT_ID.to_string(),
+        tenant_id: tenant_id.to_string(),
         organization_id: None,
         scope_type: 3,
         scope_id: scope_id.to_string(),
@@ -89,6 +107,22 @@ fn upsert_command(scope_id: i64, params: BillingPolicyParams) -> UpsertBillingPo
         effective_from: None,
         effective_to: None,
         actor_user_id: None,
+    }
+}
+
+fn upsert_command(scope_id: i64, params: BillingPolicyParams) -> UpsertBillingPolicyCommand {
+    upsert_command_for(TENANT_ID, scope_id, params)
+}
+
+fn authorization_query(scope_id: i64, estimated_points: i64) -> BillingAuthorizationQuery {
+    BillingAuthorizationQuery {
+        tenant_id: TENANT_ID.to_string(),
+        organization_id: None,
+        owner_user_id: scope_id.to_string(),
+        api_key_id: None,
+        estimated_points,
+        wallet_owner_type: Some("USER".to_owned()),
+        wallet_owner_id: Some(scope_id.to_string()),
     }
 }
 
@@ -111,7 +145,7 @@ async fn a_stored_policy_is_resolved_with_its_validated_parameters() {
         return;
     };
     let store = PostgresBillingPolicyStore::new(pool.clone());
-    reset_subject(&pool, SUBJECT_OWNERSHIP).await;
+    reset_subject_for(&pool, TENANT_ID, SUBJECT_OWNERSHIP).await;
 
     let stored = store
         .upsert_billing_policy(&upsert_command(
@@ -135,7 +169,7 @@ async fn a_second_upsert_keeps_exactly_one_live_revision() {
         return;
     };
     let store = PostgresBillingPolicyStore::new(pool.clone());
-    reset_subject(&pool, SUBJECT_REVISIONS).await;
+    reset_subject_for(&pool, TENANT_ID, SUBJECT_REVISIONS).await;
 
     store
         .upsert_billing_policy(&upsert_command(
@@ -179,10 +213,11 @@ async fn list_pages_do_not_repeat_their_first_row() {
         return;
     };
     let store = PostgresBillingPolicyStore::new(pool.clone());
-    reset_subject(&pool, SUBJECT_PAGING).await;
+    reset_subject_for(&pool, TENANT_PAGING, SUBJECT_PAGING).await;
 
     for priority in 0..4 {
-        let mut command = upsert_command(SUBJECT_PAGING, user_policy(2_000, 32_768));
+        let mut command =
+            upsert_command_for(TENANT_PAGING, SUBJECT_PAGING, user_policy(2_000, 32_768));
         command.priority = priority;
         command.policy_code = format!("live-page-{priority}");
         store
@@ -192,7 +227,7 @@ async fn list_pages_do_not_repeat_their_first_row() {
     }
 
     let page = |page: i64| BillingPolicyListQuery {
-        tenant_id: TENANT_ID.to_string(),
+        tenant_id: TENANT_PAGING.to_string(),
         organization_id: None,
         page: Some(page),
         page_size: Some(2),
@@ -229,7 +264,7 @@ async fn admission_freezes_by_estimate_and_caps_at_the_share_limit() {
         return;
     };
     let store = PostgresBillingPolicyStore::new(pool.clone());
-    reset_subject(&pool, SUBJECT_ADMISSION).await;
+    reset_subject_for(&pool, TENANT_ID, SUBJECT_ADMISSION).await;
 
     sqlx::query(
         "INSERT INTO acct_account
@@ -255,18 +290,8 @@ async fn admission_freezes_by_estimate_and_caps_at_the_share_limit() {
         .await
         .expect("store the policy");
 
-    let query = |estimated_points: i64| BillingAuthorizationQuery {
-        tenant_id: TENANT_ID.to_string(),
-        organization_id: None,
-        owner_user_id: SUBJECT_ADMISSION.to_string(),
-        api_key_id: None,
-        estimated_points,
-        wallet_owner_type: Some("USER".to_owned()),
-        wallet_owner_id: Some(SUBJECT_ADMISSION.to_string()),
-    };
-
     let normal = store
-        .evaluate_billing(&query(1_310_720))
+        .evaluate_billing(&authorization_query(SUBJECT_ADMISSION, 1_310_720))
         .await
         .expect("evaluate a normal charge");
     assert_eq!(
@@ -277,7 +302,7 @@ async fn admission_freezes_by_estimate_and_caps_at_the_share_limit() {
     );
 
     let oversized = store
-        .evaluate_billing(&query(20_971_520))
+        .evaluate_billing(&authorization_query(SUBJECT_ADMISSION, 20_971_520))
         .await
         .expect("evaluate an oversized charge");
     assert_eq!(
@@ -297,6 +322,119 @@ async fn admission_freezes_by_estimate_and_caps_at_the_share_limit() {
     .await
     .expect("read frozen amount");
     assert_eq!(33_256_530, frozen, "simulation must not move funds");
+}
+
+#[tokio::test]
+async fn admission_counts_only_live_allowance_lots() {
+    let Some(pool) = connect().await else {
+        return;
+    };
+    let store = PostgresBillingPolicyStore::new(pool.clone());
+    reset_subject_for(&pool, TENANT_ID, SUBJECT_ALLOWANCE).await;
+
+    let account_id = next_account_id();
+    sqlx::query(
+        "INSERT INTO acct_account
+             (id, uuid, tenant_id, organization_id, owner_type, owner_id, asset_code,
+              currency_code, account_purpose, available_amount, frozen_amount, pending_amount,
+              status, version, created_at, updated_at)
+         VALUES ($1, $2, $3, 0, 'USER', $4, 'token_bank',
+              'TOKEN_BANK', 'GENERAL', 0, 0, 0, 1, 1, now(), now())",
+    )
+    .bind(account_id)
+    .bind(format!("live-allowance-account-{SUBJECT_ALLOWANCE}"))
+    .bind(TENANT_ID)
+    .bind(SUBJECT_ALLOWANCE)
+    .execute(&pool)
+    .await
+    .expect("seed the allowance wallet");
+
+    // One live plan grant, one live trial pool and one already expired grant. The
+    // expiry is a bound timestamp so the statement stays static (dynamic SQL needs an
+    // injection audit in this repository).
+    let now = chrono::Utc::now();
+    for (id, remaining, source, expires_at) in [
+        (
+            account_id + 1,
+            3_000_000_i64,
+            "plan_grant",
+            now + chrono::Duration::days(30),
+        ),
+        (
+            account_id + 2,
+            1_000_000,
+            "trial",
+            now + chrono::Duration::days(30),
+        ),
+        (
+            account_id + 3,
+            9_000_000,
+            "plan_grant",
+            now - chrono::Duration::days(1),
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO acct_points_lot
+                 (id, uuid, tenant_id, account_id, granted_amount, remaining_amount,
+                  source_type, source_id, expires_at, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $5, $6, 0, $7, 1, now(), now())",
+        )
+        .bind(id)
+        .bind(format!("live-lot-{id}"))
+        .bind(TENANT_ID)
+        .bind(account_id)
+        .bind(remaining)
+        .bind(source)
+        .bind(expires_at)
+        .execute(&pool)
+        .await
+        .expect("seed the allowance lot");
+    }
+
+    let mut command = upsert_command(SUBJECT_ALLOWANCE, user_policy(10_000, 32_768));
+    command.params.charge_mode = ChargeMode::PlanAllowance;
+    store
+        .upsert_billing_policy(&command)
+        .await
+        .expect("store the allowance policy");
+
+    // The live grant funds the request; allowance credit is consumed at settlement,
+    // so admission freezes nothing.
+    assert_eq!(
+        AdmissionDecision::Admit { hold_points: 0 },
+        store
+            .evaluate_billing(&authorization_query(SUBJECT_ALLOWANCE, 1_000_000))
+            .await
+            .expect("evaluate against the live lot")
+            .decision,
+    );
+
+    // Expire every grant: an expired lot must not fund anything. With a strict
+    // overage policy the rejection names the exhausted allowance rather than a
+    // missing balance, because the wallet was never the funding source.
+    sqlx::query(
+        "UPDATE acct_points_lot SET expires_at = now() - interval '1 minute' WHERE account_id = $1",
+    )
+    .bind(account_id)
+    .execute(&pool)
+    .await
+    .expect("expire the lots");
+    let mut strict = command.clone();
+    strict.params.overage_policy = OveragePolicy::Fail;
+    store
+        .upsert_billing_policy(&strict)
+        .await
+        .expect("store the strict allowance policy");
+    assert_eq!(
+        AdmissionDecision::Reject {
+            code: AdmissionRejectCode::AllowanceExhausted,
+        },
+        store
+            .evaluate_billing(&authorization_query(SUBJECT_ALLOWANCE, 1_000_000))
+            .await
+            .expect("evaluate against exhausted lots")
+            .decision,
+    );
 }
 
 fn next_account_id() -> i64 {

@@ -981,7 +981,13 @@ impl PostgresCommerceAccountStore {
                 let hold_uuid = string_cell(&row, "uuid");
                 let tenant_id = integer_cell(&row, "tenant_id");
                 let account_id = integer_cell(&row, "account_id");
-                let amount = string_cell(&row, "amount");
+                // `acct_hold.amount` is BIGINT (minor units). Decoding it as text
+                // yields the empty string (sqlx cannot decode an INT8 cell as
+                // String), and `parse_amount_minor("")` then rejects the sweep with
+                // "money amount must be a non-negative number with up to 6 decimal
+                // places" — aborting the whole transaction, so no expired hold was
+                // ever released and the frozen balance stayed unavailable.
+                let amount = format_i64(integer_cell(&row, "amount"));
                 expire_one_expired_hold_postgres(
                     &mut tx,
                     tenant_id,
@@ -1102,7 +1108,8 @@ impl PostgresCommerceAccountStore {
             for row in rows {
                 let hold_uuid = string_cell(&row, "uuid");
                 let account_id = integer_cell(&row, "account_id");
-                let amount = string_cell(&row, "amount");
+                // Same BIGINT-decoded-as-text defect as the global sweep above.
+                let amount = format_i64(integer_cell(&row, "amount"));
                 let asset_type = asset_type_from_code(&string_cell(&row, "asset_code"))?;
                 expire_one_expired_hold_postgres(
                     &mut tx, tenant_id, account_id, &hold_uuid, &amount, asset_type, &now,
@@ -2081,7 +2088,7 @@ async fn load_transfer_replay(
         asset_type: asset_type_from_code(&string_cell(&row, "asset_code"))?
             .as_str()
             .to_owned(),
-        amount: string_cell(&row, "amount"),
+        amount: format_i64(integer_cell(&row, "amount")),
         status: "completed".to_owned(),
         business_type: string_cell(&row, "business_type"),
         business_no: string_cell(&row, "business_no"),
@@ -2154,9 +2161,9 @@ async fn load_transfer_ledger_by_journal(
         &format_i64(integer_cell(&row, "owner_id")),
         asset_type_from_code(&string_cell(&row, "asset_code"))?,
         parse_direction(&string_cell(&row, "direction"))?,
-        &string_cell(&row, "amount"),
-        &string_cell(&row, "balance_before"),
-        &string_cell(&row, "balance_after"),
+        &format_i64(integer_cell(&row, "amount")),
+        &format_i64(integer_cell(&row, "balance_before")),
+        &format_i64(integer_cell(&row, "balance_after")),
         &string_cell(&row, "business_type"),
         &string_cell(&row, "business_no"),
         &string_cell(&row, "request_no"),
@@ -2402,5 +2409,32 @@ mod tests {
     #[test]
     fn settlement_ledger_rejects_a_malformed_balance() {
         assert!(settlement_ledger_balances("not-an-amount", 1).is_err());
+    }
+
+    /// Monetary columns in this schema are `BIGINT` minor units, so they must be
+    /// decoded numerically.
+    ///
+    /// `string_cell` is `try_get::<String>`; an INT8 cell cannot be decoded as
+    /// text, so it silently degrades to the empty string. `parse_amount_minor("")`
+    /// then fails with "money amount must be a non-negative number with up to 6
+    /// decimal places". That is exactly how the expired-hold sweep died in
+    /// production: the whole sweep transaction rolled back on the first hold, no
+    /// expired hold was ever released, and the frozen balance stayed unavailable
+    /// long enough to answer later requests with "insufficient balance".
+    #[test]
+    fn monetary_columns_are_decoded_numerically_not_as_text() {
+        const SOURCE: &str = include_str!("postgres_hold.rs");
+        for column in [
+            "amount",
+            "balance_before",
+            "balance_after",
+            "released_amount",
+        ] {
+            let text_read = format!("string_cell(&row, \"{column}\")");
+            assert!(
+                !SOURCE.contains(&text_read),
+                "`{column}` is a BIGINT column; read it with integer_cell/format_i64 instead of {text_read}"
+            );
+        }
     }
 }
